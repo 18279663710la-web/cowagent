@@ -268,9 +268,19 @@ class AgentBridge:
         self.default_agent = None  # For backward compatibility (no session_id)
         self.agent: Optional[Agent] = None
         self.scheduler_initialized = False
-        
+        self.character_manager = None  # injected later via set_character_manager()
+        self.proactive_service = None  # injected later via set_proactive_service()
+
         # Create helper instances
         self.initializer = AgentInitializer(bridge, self)
+
+    def set_character_manager(self, character_manager):
+        """Inject CharacterManager for character-aware agent routing."""
+        self.character_manager = character_manager
+
+    def set_proactive_service(self, proactive_service):
+        """Inject ProactiveService for proactive message triggers."""
+        self.proactive_service = proactive_service
     def create_agent(self, system_prompt: str, tools: List = None, **kwargs) -> Agent:
         """
         Create the super agent with COW integration
@@ -330,11 +340,14 @@ class AgentBridge:
     
     def get_agent(self, session_id: str = None) -> Optional[Agent]:
         """
-        Get agent instance for the given session
-        
+        Get agent instance for the given session.
+
+        When the character system is active, resolves the user's active character
+        and routes to the character's dedicated agent workspace.
+
         Args:
             session_id: Session identifier (e.g., user_id). If None, returns default agent.
-        
+
         Returns:
             Agent instance for this session
         """
@@ -343,12 +356,44 @@ class AgentBridge:
             if self.default_agent is None:
                 self._init_default_agent()
             return self.default_agent
-        
-        # Check if agent exists for this session
+
+        # Character-aware routing
+        if self._is_character_active():
+            char = self.character_manager.get_active_character(session_id)
+            # Fallback: channels may use different user IDs than the one used
+            # to activate the character in the web UI (e.g. WeChat user IDs,
+            # web session_xxx IDs). When the exact session_id doesn't match,
+            # pick the first active character in the system.
+            if not char:
+                active_chars = [c for c in self.character_manager.list_characters() if c.is_active]
+                if active_chars:
+                    char = active_chars[0]
+                    logger.debug(
+                        f"[AgentBridge] Using active character '{char.name}' "
+                        f"for session_id={session_id}"
+                    )
+            if char:
+                agent_key = self._character_agent_key(session_id, char.id)
+                if agent_key not in self.agents:
+                    self._init_agent_for_character(session_id, char)
+                return self.agents.get(agent_key)
+
+        # Standard routing (no character system)
         if session_id not in self.agents:
             self._init_agent_for_session(session_id)
-        
+
         return self.agents[session_id]
+
+    @staticmethod
+    def _character_agent_key(user_id: str, character_id: str) -> str:
+        return f"{user_id}:{character_id}"
+
+    def _is_character_active(self) -> bool:
+        from config import conf
+        return bool(
+            conf().get("character_active", False)
+            and self.character_manager
+        )
     
     def _init_default_agent(self):
         """Initialize default super agent"""
@@ -359,8 +404,110 @@ class AgentBridge:
         """Initialize agent for a specific session"""
         agent = self.initializer.initialize_agent(session_id=session_id)
         self.agents[session_id] = agent
+
+    def _init_agent_for_character(self, user_id: str, character):
+        """Initialize an agent wired to a specific character's workspace."""
+        workspace = self.character_manager.store.get_character_workspace(character.id)
+        agent_key = self._character_agent_key(user_id, character.id)
+        agent = self.initializer.initialize_agent(
+            session_id=agent_key,
+            workspace=workspace,
+        )
+        self.agents[agent_key] = agent
+        logger.info(
+            f"[AgentBridge] Initialized agent for character '{character.name}' "
+            f"(user={user_id}, workspace={workspace})"
+        )
+
+    def switch_character(self, user_id: str, new_character_id: str):
+        """
+        Switch a user's active character at runtime.
+        Saves the old character's agent state and switches to the new workspace.
+        """
+        if not self.character_manager:
+            return
+        old_char = self.character_manager.get_active_character(user_id)
+        if old_char and old_char.id == new_character_id:
+            return  # already active
+
+        # Deactivate old, activate new
+        self.character_manager.switch_character(new_character_id, user_id)
+
+        # Pre-initialize the new character's agent (optional warm-up)
+        new_char = self.character_manager.get_character(new_character_id)
+        if new_char:
+            agent_key = self._character_agent_key(user_id, new_char.id)
+            if agent_key not in self.agents:
+                self._init_agent_for_character(user_id, new_char)
+
+        logger.info(
+            f"[AgentBridge] Switched character for user={user_id}: "
+            f"{old_char.name if old_char else 'None'} -> {new_char.name if new_char else 'Unknown'}"
+        )
     
-    def agent_reply(self, query: str, context: Context = None, 
+    def _validate_persona(self, response: str, session_id: str, agent) -> str:
+        """
+        Validate that the LLM response stays within the character's persona.
+        If deviation is detected, re-generate with stricter enforcement.
+        """
+        from config import conf
+        if not conf().get("persona_validation", False):
+            return response
+        if not self._is_character_active() or not session_id:
+            return response
+        if not response or not response.strip():
+            return response
+
+        char = self.character_manager.get_active_character(session_id)
+        if not char:
+            return response
+
+        try:
+            from characters.persona_validator import PersonaValidator
+            validator = PersonaValidator(llm_model=agent.model if agent else None)
+            result = validator.validate(response, char)
+
+            if result.passed:
+                logger.debug(f"[AgentBridge] Persona check passed (score={result.score:.2f})")
+                return response
+
+            logger.warning(
+                f"[AgentBridge] Persona deviation detected (score={result.score:.2f}): {result.issues}"
+            )
+
+            # Retry with stricter enforcement
+            max_retries = conf().get("persona_validation_max_retries", 2)
+            threshold = conf().get("persona_validation_threshold", 0.7)
+
+            for attempt in range(max_retries):
+                correction_hint = (
+                    f"\n[系统指令 - 人设纠正]\n"
+                    f"你刚才的回复偏离了你的角色设定。请重新生成回复，注意以下问题：\n"
+                    + "\n".join(f"- {issue}" for issue in result.issues)
+                )
+                retry_response = agent.run_stream(
+                    user_message=correction_hint,
+                    on_event=None,
+                    clear_history=False,
+                )
+                if retry_response and retry_response.strip():
+                    response = retry_response.strip()
+
+                result = validator.validate(response, char)
+                if result.passed and result.score >= threshold:
+                    logger.info(f"[AgentBridge] Persona check passed after retry {attempt+1}")
+                    return response
+
+            logger.warning(
+                f"[AgentBridge] Persona still deviating after {max_retries} retries, "
+                f"returning best effort"
+            )
+        except Exception as e:
+            logger.warning(f"[AgentBridge] Persona validation failed (non-fatal): {e}")
+
+        return response
+
+    def agent_reply(self, query: str, context: Context = None,
                    on_event=None, clear_history: bool = False) -> Reply:
         """
         Use super agent to reply to a query
@@ -380,6 +527,10 @@ class AgentBridge:
             # Extract session_id from context for user isolation
             if context:
                 session_id = context.kwargs.get("session_id") or context.get("session_id")
+
+            # Record user activity for proactive messaging
+            if session_id and self.proactive_service:
+                self.proactive_service.record_activity(session_id)
             
             # Get agent for this session (will auto-initialize if needed)
             agent = self.get_agent(session_id=session_id)
@@ -482,6 +633,9 @@ class AgentBridge:
                     # Return file reply based on file type
                     return self._create_file_reply(file_info, response, context)
             
+            # Persona compliance validation (when character system is active)
+            response = self._validate_persona(response, session_id, agent)
+
             return Reply(ReplyType.TEXT, response)
             
         except Exception as e:

@@ -295,51 +295,117 @@ class ChatChannel(Channel):
             reply = e_context["reply"]
             if not e_context.is_pass() and reply and reply.type:
                 logger.debug("[chat_channel] sending reply: {}, context: {}".format(reply, context))
-                
-                # 如果是文本回复，尝试提取并发送图片
-                # Web channel renders images/videos inline via renderMarkdown,
-                # so skip the extract-and-send step to avoid duplicate media.
-                if reply.type == ReplyType.TEXT and context.get("channel_type") != "web":
-                    self._extract_and_send_images(reply, context)
-                elif reply.type == ReplyType.TEXT:
-                    self._send(reply, context)
-                # 如果是图片回复但带有文本内容，先发文本再发图片
+
+                if reply.type == ReplyType.TEXT:
+                    is_web = context.get("channel_type") == "web"
+                    if not is_web:
+                        # Extract image/video refs from text, then send cleaned
+                        # text segmented (human-like chunking) and media separately
+                        self._extract_and_send_images_segmented(reply, context)
+                    else:
+                        self._send_text_segmented(reply, context)
+                # IMAGE_URL with accompanying text: send text first segmented, then image
                 elif reply.type == ReplyType.IMAGE_URL and hasattr(reply, 'text_content') and reply.text_content:
-                    # 先发送文本
                     text_reply = Reply(ReplyType.TEXT, reply.text_content)
-                    self._send(text_reply, context)
-                    # 短暂延迟后发送图片
+                    self._send_text_segmented(text_reply, context)
                     time.sleep(0.3)
                     self._send(reply, context)
                 else:
                     self._send(reply, context)
-    
-    def _extract_and_send_images(self, reply: Reply, context: Context):
+
+    def _send_text_segmented(self, reply: Reply, context: Context):
         """
-        从文本回复中提取图片/视频URL并单独发送
-        支持格式：[图片: /path/to/image.png], [视频: /path/to/video.mp4], ![](url), <img src="url">
-        最多发送5个媒体文件
+        Send a text reply, optionally splitting it into multiple segments
+        with human-like delays between them.
+
+        Splitting priority:
+        1. AI-inserted || markers (primary, the AI deliberately marks breaks)
+        2. Paragraph boundaries (fallback, splits on double-newlines)
+        3. Sentence boundaries (fallback, for very long paragraphs)
+
+        Applied to all IM channels. Web channel also passes through here
+        but the existing _decorate_reply / renderMarkdown handles it naturally.
+        """
+        from config import conf
+
+        enabled = conf().get("reply_segmentation", True)
+        if not enabled:
+            self._send(reply, context)
+            return
+
+        text = reply.content
+        if not text or not text.strip():
+            self._send(reply, context)
+            return
+
+        max_chars = conf().get("reply_segment_max_chars", 200)
+        delay_min = conf().get("reply_segment_delay_min", 1.5)
+        delay_max = conf().get("reply_segment_delay_max", 3.5)
+
+        segments = self._split_text_for_chunking(text, max_chars)
+        if len(segments) <= 1:
+            self._send(reply, context)
+            return
+
+        has_delimiter = "||" in text
+        logger.info(
+            f"[chat_channel] Segmenting reply into {len(segments)} parts "
+            f"(has_delimiter={has_delimiter}, max_chars={max_chars})"
+        )
+
+        import random
+        for i, segment in enumerate(segments):
+            logger.info(f"[chat_channel] Seg {i+1}/{len(segments)}: {segment[:60]}...")
+            segment_reply = Reply(ReplyType.TEXT, segment)
+            self._send(segment_reply, context)
+            if i < len(segments) - 1:
+                delay = random.uniform(delay_min, delay_max)
+                time.sleep(delay)
+
+    @staticmethod
+    def _split_text_for_chunking(text: str, max_chars: int = 100) -> list[str]:
+        """
+        Split text ONLY on AI-inserted || markers.
+
+        If the AI doesn't use ||, the entire reply is sent as one message.
+        This forces the AI to take responsibility for segmentation.
+        """
+        import re
+
+        if "||" in text:
+            parts = re.split(r'\s*\|\|\s*', text)
+            segments = [p.strip() for p in parts if p.strip()]
+            if len(segments) > 1:
+                return segments
+
+        # No || markers: send as a single message
+        return [text]
+    
+    def _extract_and_send_images_segmented(self, reply: Reply, context: Context):
+        """
+        Extract image/video references from the reply text, send the cleaned
+        text in human-like segments, then send each media item separately.
         """
         content = reply.content
-        media_items = []  # [(url, type), ...]
-        
-        # 正则提取各种格式的媒体URL
+        media_items = []
+
+        # Regex patterns to extract media references
         patterns = [
-            (r'\[图片:\s*([^\]]+)\]', 'image'),   # [图片: /path/to/image.png]
-            (r'\[视频:\s*([^\]]+)\]', 'video'),   # [视频: /path/to/video.mp4]
-            (r'!\[.*?\]\(([^\)]+)\)', 'image'),   # ![alt](url) - 默认图片
-            (r'<img[^>]+src=["\']([^"\']+)["\']', 'image'),  # <img src="url">
-            (r'<video[^>]+src=["\']([^"\']+)["\']', 'video'),  # <video src="url">
-            (r'https?://[^\s]+\.(?:jpg|jpeg|png|gif|webp)', 'image'),  # 直接的图片URL
-            (r'https?://[^\s]+\.(?:mp4|avi|mov|wmv|flv)', 'video'),  # 直接的视频URL
+            (r'\[图片:\s*([^\]]+)\]', 'image'),
+            (r'\[视频:\s*([^\]]+)\]', 'video'),
+            (r'!\[.*?\]\(([^\)]+)\)', 'image'),
+            (r'<img[^>]+src=["\']([^"\']+)["\']', 'image'),
+            (r'<video[^>]+src=["\']([^"\']+)["\']', 'video'),
+            (r'https?://[^\s]+\.(?:jpg|jpeg|png|gif|webp)', 'image'),
+            (r'https?://[^\s]+\.(?:mp4|avi|mov|wmv|flv)', 'video'),
         ]
-        
+
         for pattern, media_type in patterns:
             matches = re.findall(pattern, content, re.IGNORECASE)
             for match in matches:
                 media_items.append((match, media_type))
-        
-        # 去重（保持顺序）并限制最多5个
+
+        # Deduplicate and limit to 5
         seen = set()
         unique_items = []
         for url, mtype in media_items:
@@ -347,18 +413,24 @@ class ChatChannel(Channel):
                 seen.add(url)
                 unique_items.append((url, mtype))
         media_items = unique_items[:5]
-        
+
+        # Strip media references from text for cleaner reading
+        clean_text = content
+        for pattern, _ in patterns:
+            clean_text = re.sub(pattern, '', clean_text, flags=re.IGNORECASE)
+        clean_text = re.sub(r'\n{3,}', '\n\n', clean_text).strip()
+
+        # Send text segmented (human-like chunking)
+        if clean_text:
+            segment_reply = Reply(ReplyType.TEXT, clean_text)
+            self._send_text_segmented(segment_reply, context)
+
+        # Send media items one by one
         if media_items:
-            logger.info(f"[chat_channel] Extracted {len(media_items)} media item(s) from reply")
-            
-            # Send text first (the frontend will embed video players via renderMarkdown).
-            logger.info(f"[chat_channel] Sending text content before media: {reply.content[:100]}...")
-            self._send(reply, context)
-            logger.info(f"[chat_channel] Text sent, now sending {len(media_items)} media item(s)")
-            
-            for i, (url, media_type) in enumerate(media_items):
+            logger.info(f"[chat_channel] Extracted {len(media_items)} media item(s)")
+            import time
+            for url, media_type in media_items:
                 try:
-                    # Determine whether it is a remote URL or a local file.
                     if url.startswith(('http://', 'https://')):
                         if media_type == 'video':
                             media_reply = Reply(ReplyType.FILE, url)
@@ -367,24 +439,16 @@ class ChatChannel(Channel):
                             media_reply = Reply(ReplyType.IMAGE_URL, url)
                     elif os.path.exists(url):
                         if media_type == 'video':
-                            media_reply = Reply(ReplyType.FILE, f"file://{url}")
+                            media_reply = Reply(ReplyType.FILE, url)
                             media_reply.file_name = os.path.basename(url)
                         else:
-                            media_reply = Reply(ReplyType.IMAGE_URL, f"file://{url}")
+                            media_reply = Reply(ReplyType.IMAGE_URL, url)
                     else:
-                        logger.warning(f"[chat_channel] Media file not found or invalid URL: {url}")
                         continue
-                    
-                    if i > 0:
-                        time.sleep(0.5)
+                    time.sleep(0.3)
                     self._send(media_reply, context)
-                    logger.info(f"[chat_channel] Sent {media_type} {i+1}/{len(media_items)}: {url[:50]}...")
-                    
                 except Exception as e:
-                    logger.error(f"[chat_channel] Failed to send {media_type} {url}: {e}")
-        else:
-            # 没有媒体文件，正常发送文本
-                self._send(reply, context)
+                    logger.warning(f"[chat_channel] Failed to send media {url}: {e}")
 
     def _send(self, reply: Reply, context: Context, retry_cnt=0):
         try:

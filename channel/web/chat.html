@@ -162,6 +162,11 @@
                             <i class="fas fa-clock item-icon text-xs w-5 text-center"></i>
                             <span data-i18n="menu_tasks">定时</span>
                         </a>
+                        <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
+                           data-view="characters">
+                            <i class="fas fa-user-astronaut item-icon text-xs w-5 text-center"></i>
+                            <span data-i18n="menu_characters">角色</span>
+                        </a>
                     </div>
                 </div>
 
@@ -920,6 +925,121 @@
                     </div>
                 </div>
 
+                <!-- Characters View -->
+                <div id="view-characters" class="view">
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <div class="max-w-5xl mx-auto">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100">角色管理</h2>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">创建和管理 AI 角色，每个角色拥有独立的人设和记忆</p>
+                                </div>
+                                <button id="btn-new-character" onclick="showCharacterEditor()"
+                                        class="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
+                                               rounded-xl cursor-pointer transition-colors duration-150">
+                                    <i class="fas fa-plus mr-2"></i>创建角色
+                                </button>
+                            </div>
+                            <!-- Character Cards Grid -->
+                            <div id="character-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="col-span-full text-center py-12 text-slate-400 dark:text-slate-500">
+                                    <i class="fas fa-user-astronaut text-4xl mb-3 block opacity-30"></i>
+                                    <p>暂无角色，点击"创建角色"开始</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Character Editor Modal -->
+                    <div id="character-editor-overlay" class="fixed inset-0 bg-black/50 z-[100] hidden flex items-center justify-center">
+                        <div class="bg-white dark:bg-[#1A1A1A] rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl
+                                    w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+                            <div class="p-6">
+                                <div class="flex items-center justify-between mb-5">
+                                    <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100" id="character-editor-title">创建角色</h3>
+                                    <button onclick="hideCharacterEditor()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+                                        <i class="fas fa-times text-lg"></i>
+                                    </button>
+                                </div>
+                                <form id="character-form" onsubmit="return false;">
+                                    <input type="hidden" id="char-id" value="">
+                                    <div class="grid grid-cols-3 gap-4 mb-4">
+                                        <div>
+                                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">姓名 *</label>
+                                            <input id="char-name" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                                          bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                                          focus:outline-none focus:ring-2 focus:ring-primary-400/50" placeholder="角色名">
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">性别</label>
+                                            <select id="char-gender" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                                           bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                                           focus:outline-none focus:ring-2 focus:ring-primary-400/50">
+                                                <option value="保密">保密</option><option value="男">男</option><option value="女">女</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">年龄</label>
+                                            <input id="char-age" type="number" value="25" min="1" max="120"
+                                                   class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                                          bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                                          focus:outline-none focus:ring-2 focus:ring-primary-400/50">
+                                        </div>
+                                    </div>
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">与用户的关系</label>
+                                        <input id="char-relationship" value="朋友" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                                  bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                                  focus:outline-none focus:ring-2 focus:ring-primary-400/50" placeholder="如: 朋友、恋人、导师、家人...">
+                                    </div>
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">性格 *</label>
+                                        <textarea id="char-personality" rows="2" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                                   bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                                   focus:outline-none focus:ring-2 focus:ring-primary-400/50" placeholder="如: 活泼开朗、温柔体贴、幽默风趣..."></textarea>
+                                    </div>
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">语言风格</label>
+                                        <input id="char-language-style" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                                  bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                                  focus:outline-none focus:ring-2 focus:ring-primary-400/50" placeholder="如: 自然口语化、温柔细腻、简洁明快...">
+                                    </div>
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">口头禅（回车分隔）</label>
+                                        <textarea id="char-catchphrases" rows="1" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                                   bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                                   focus:outline-none focus:ring-2 focus:ring-primary-400/50" placeholder="每行一个口头禅"></textarea>
+                                    </div>
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">兴趣爱好（逗号分隔）</label>
+                                        <input id="char-interests" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                                  bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                                  focus:outline-none focus:ring-2 focus:ring-primary-400/50" placeholder="如: 读书,音乐,旅行,游戏">
+                                    </div>
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">背景故事</label>
+                                        <textarea id="char-background" rows="2" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                                   bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                                   focus:outline-none focus:ring-2 focus:ring-primary-400/50" placeholder="角色的背景故事..."></textarea>
+                                    </div>
+                                    <div class="flex gap-3 justify-end pt-2">
+                                        <button type="button" onclick="hideCharacterEditor()"
+                                                class="px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-sm
+                                                       text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                                            取消
+                                        </button>
+                                        <button type="submit" onclick="saveCharacter()"
+                                                class="px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
+                                                       rounded-xl cursor-pointer transition-colors duration-150">
+                                            保存
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div><!-- /content-area -->
         </div><!-- /main-content -->
     </div><!-- /app -->
@@ -952,5 +1072,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
     <script src="assets/js/console.js"></script>
+    <script src="assets/js/characters.js"></script>
 </body>
 </html>

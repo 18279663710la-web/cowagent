@@ -864,6 +864,167 @@ class ConversationStore:
             finally:
                 conn.close()
 
+    def export_session(self, session_id: str, fmt: str = "json") -> Optional[str]:
+        """
+        Export conversation history for a session.
+
+        Args:
+            session_id: Session to export
+            fmt: "json" or "markdown"
+
+        Returns:
+            Formatted string, or None if session not found
+        """
+        with self._lock:
+            conn = self._connect()
+            try:
+                title_row = conn.execute(
+                    "SELECT title FROM sessions WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()
+                if not title_row:
+                    return None
+                title = title_row[0] or "Untitled"
+
+                rows = conn.execute(
+                    "SELECT role, content, created_at FROM messages "
+                    "WHERE session_id = ? ORDER BY seq",
+                    (session_id,),
+                ).fetchall()
+
+                turns = _group_into_display_turns(rows)
+
+                if fmt == "markdown":
+                    return self._format_export_markdown(title, turns)
+                else:
+                    export_data = {
+                        "session_id": session_id,
+                        "title": title,
+                        "exported_at": datetime.now().isoformat(),
+                        "turns": [
+                            {
+                                "user": t.get("user", ""),
+                                "assistant": t.get("assistant", ""),
+                                "tool_calls": [
+                                    {"tool": tc.get("name", ""), "input": tc.get("input", "")}
+                                    for tc in t.get("tool_calls", [])
+                                ],
+                            }
+                            for t in turns
+                        ],
+                    }
+                    return json.dumps(export_data, ensure_ascii=False, indent=2)
+            except Exception as e:
+                logger.error(f"[ConversationStore] Export failed: {e}")
+                return None
+            finally:
+                conn.close()
+
+    @staticmethod
+    def _format_export_markdown(title: str, turns: list) -> str:
+        """Format exported turns as Markdown."""
+        lines = [f"# {title}\n", f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n", "---\n"]
+        for i, turn in enumerate(turns, 1):
+            user_text = turn.get("user", "")
+            assistant_text = turn.get("assistant", "")
+            if user_text:
+                lines.append(f"### 第{i}轮 - 用户\n\n{user_text}\n")
+            if assistant_text:
+                lines.append(f"### 第{i}轮 - AI\n\n{assistant_text}\n")
+            lines.append("---\n")
+        return "\n".join(lines)
+
+    def search_messages(self, keyword: str, session_id: str = None, limit: int = 50) -> list:
+        """
+        Full-text search across messages.
+
+        Args:
+            keyword: Search keyword
+            session_id: Optional session to scope the search
+            limit: Max results
+
+        Returns:
+            List of matching message dicts with session context
+        """
+        with self._lock:
+            conn = self._connect()
+            try:
+                params = []
+                where = ["1=1"]
+                if session_id:
+                    where.append("m.session_id = ?")
+                    params.append(session_id)
+                where.append("m.content LIKE ?")
+                params.append(f"%{keyword}%")
+
+                sql = (
+                    "SELECT m.session_id, s.title, m.role, m.content, m.created_at "
+                    "FROM messages m "
+                    "LEFT JOIN sessions s ON m.session_id = s.session_id "
+                    f"WHERE {' AND '.join(where)} "
+                    "ORDER BY m.created_at DESC "
+                    "LIMIT ?"
+                )
+                params.append(limit)
+                rows = conn.execute(sql, params).fetchall()
+
+                results = []
+                for row in rows:
+                    content = row[3]
+                    try:
+                        content_obj = json.loads(content)
+                        display_text = _extract_display_text(content_obj)
+                    except Exception:
+                        display_text = content
+                    # Highlight keyword in display
+                    snippet = display_text[:200]
+                    results.append({
+                        "session_id": row[0],
+                        "title": row[1],
+                        "role": row[2],
+                        "snippet": snippet,
+                        "created_at": row[4],
+                    })
+                return results
+            except Exception as e:
+                logger.error(f"[ConversationStore] Search failed: {e}")
+                return []
+            finally:
+                conn.close()
+
+    def get_session_stats(self, session_id: str) -> dict:
+        """Return stats for a single session."""
+        with self._lock:
+            conn = self._connect()
+            try:
+                row = conn.execute(
+                    "SELECT title, msg_count, created_at, last_active FROM sessions WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()
+                if not row:
+                    return {}
+                msgs = conn.execute(
+                    "SELECT COUNT(*) FROM messages WHERE session_id = ?", (session_id,)
+                ).fetchone()[0]
+                first = conn.execute(
+                    "SELECT MIN(created_at) FROM messages WHERE session_id = ?", (session_id,)
+                ).fetchone()[0]
+                last = conn.execute(
+                    "SELECT MAX(created_at) FROM messages WHERE session_id = ?", (session_id,)
+                ).fetchone()[0]
+                return {
+                    "session_id": session_id,
+                    "title": row[0],
+                    "msg_count_db": row[1],
+                    "msg_count_actual": msgs,
+                    "created_at": row[2],
+                    "last_active": row[3],
+                    "first_message": first,
+                    "last_message": last,
+                }
+            finally:
+                conn.close()
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

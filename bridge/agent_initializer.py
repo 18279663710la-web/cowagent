@@ -34,20 +34,25 @@ class AgentInitializer:
         self.bridge = bridge
         self.agent_bridge = agent_bridge
     
-    def initialize_agent(self, session_id: Optional[str] = None) -> Agent:
+    def initialize_agent(self, session_id: Optional[str] = None, workspace: str = None) -> Agent:
         """
         Initialize agent for a session
-        
+
         Args:
             session_id: Session ID (None for default agent)
-        
+            workspace: Optional override for workspace directory.
+                       When set, uses this path instead of the default agent_workspace.
+
         Returns:
             Initialized agent instance
         """
         from config import conf
-        
-        # Get workspace from config
-        workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
+
+        # Get workspace from config (optionally overridden by parameter)
+        if workspace:
+            workspace_root = expand_path(workspace)
+        else:
+            workspace_root = expand_path(conf().get("agent_workspace", "~/cow"))
         
         # Migrate API keys
         self._migrate_config_to_env(workspace_root)

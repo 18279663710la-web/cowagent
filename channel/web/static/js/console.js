@@ -15,7 +15,7 @@ const I18N = {
         console: '控制台',
         nav_chat: '对话', nav_manage: '管理', nav_monitor: '监控',
         menu_chat: '对话', menu_config: '配置', menu_skills: '技能',
-        menu_memory: '记忆', menu_knowledge: '知识', menu_channels: '通道', menu_tasks: '定时',
+        menu_memory: '记忆', menu_knowledge: '知识', menu_channels: '通道', menu_tasks: '定时', menu_characters: '角色',
         menu_logs: '日志',
         knowledge_title: '知识库', knowledge_desc: '浏览和探索你的知识库',
         knowledge_tab_docs: '文档', knowledge_tab_graph: '图谱',
@@ -327,6 +327,7 @@ const VIEW_META = {
     knowledge:{ group: 'nav_manage',  page: 'menu_knowledge' },
     channels: { group: 'nav_manage',  page: 'menu_channels' },
     tasks:    { group: 'nav_manage',  page: 'menu_tasks' },
+    characters:{ group: 'nav_manage', page: 'menu_characters' },
     logs:     { group: 'nav_monitor', page: 'menu_logs' },
 };
 

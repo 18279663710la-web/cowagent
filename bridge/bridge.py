@@ -131,6 +131,20 @@ class Bridge(object):
         if self._agent_bridge is None:
             from bridge.agent_bridge import AgentBridge
             self._agent_bridge = AgentBridge(self)
+            # Inject CharacterManager if character system is active
+            try:
+                from characters.registry import get_character_manager, get_proactive_service
+                char_mgr = get_character_manager()
+                if char_mgr:
+                    self._agent_bridge.set_character_manager(char_mgr)
+                proactive_svc = get_proactive_service()
+                if proactive_svc:
+                    self._agent_bridge.set_proactive_service(proactive_svc)
+                    if char_mgr:
+                        char_mgr.set_agent_bridge(self._agent_bridge)
+                    proactive_svc.set_agent_bridge(self._agent_bridge)
+            except Exception:
+                pass
         return self._agent_bridge
 
     def fetch_agent_reply(self, query: str, context: Context = None,

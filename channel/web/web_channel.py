@@ -592,6 +592,14 @@ class WebChannel(ChatChannel):
             '/api/logs', 'LogsHandler',
             '/api/version', 'VersionHandler',
             '/assets/(.*)', 'AssetsHandler',
+            # Character management API
+            '/api/characters', 'CharactersHandler',
+            '/api/characters/(.*)/history', 'CharacterHistoryHandler',
+            '/api/characters/(.*)/memory', 'CharacterMemoryHandler',
+            '/api/characters/(.*)/export', 'CharacterExportHandler',
+            '/api/characters/(.*)/activate', 'CharacterActivateHandler',
+            '/api/characters/(.*)/deactivate', 'CharacterDeactivateHandler',
+            '/api/characters/(.*)', 'CharacterDetailHandler',
         )
         app = web.application(urls, globals(), autoreload=False)
 
@@ -2127,3 +2135,236 @@ class VersionHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         from cli import __version__
         return json.dumps({"version": __version__})
+
+
+# ── Character Management API Handlers ──────────────────────────────────
+
+class CharactersHandler:
+    """GET /api/characters — list all characters
+       POST /api/characters — create a new character"""
+
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from characters.registry import get_character_manager
+            cm = get_character_manager()
+            if not cm:
+                return json.dumps({"status": "error", "message": "Character system not enabled"})
+            chars = cm.list_characters()
+            return json.dumps(
+                {"status": "success", "characters": [c.to_dict() for c in chars]},
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            logger.error(f"[WebChannel] Characters list error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from characters.registry import get_character_manager
+            cm = get_character_manager()
+            if not cm:
+                return json.dumps({"status": "error", "message": "Character system not enabled"})
+            body = json.loads(web.data())
+            char = cm.create_character(body)
+            return json.dumps({"status": "success", "character": char.to_dict()}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Character create error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class CharacterDetailHandler:
+    """GET /api/characters/{id} — get character
+       PUT /api/characters/{id} — update character
+       DELETE /api/characters/{id} — delete character
+       POST /api/characters/{id}/activate — activate character
+       POST /api/characters/{id}/deactivate — deactivate character"""
+
+    def GET(self, character_id: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from characters.registry import get_character_manager
+            cm = get_character_manager()
+            if not cm:
+                return json.dumps({"status": "error", "message": "Character system not enabled"})
+            char = cm.get_character(character_id)
+            if not char:
+                return json.dumps({"status": "error", "message": "Character not found"})
+            return json.dumps({"status": "success", "character": char.to_dict()}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Character get error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def PUT(self, character_id: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from characters.registry import get_character_manager
+            cm = get_character_manager()
+            if not cm:
+                return json.dumps({"status": "error", "message": "Character system not enabled"})
+            body = json.loads(web.data())
+            char = cm.update_character(character_id, body)
+            if not char:
+                return json.dumps({"status": "error", "message": "Character not found"})
+            return json.dumps({"status": "success", "character": char.to_dict()}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Character update error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def DELETE(self, character_id: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from characters.registry import get_character_manager
+            cm = get_character_manager()
+            if not cm:
+                return json.dumps({"status": "error", "message": "Character system not enabled"})
+            ok = cm.delete_character(character_id)
+            if not ok:
+                return json.dumps({"status": "error", "message": "Character not found"})
+            return json.dumps({"status": "success"})
+        except Exception as e:
+            logger.error(f"[WebChannel] Character delete error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+class CharacterActivateHandler:
+    """POST /api/characters/{id}/activate — activate a character"""
+
+    def POST(self, character_id: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from characters.registry import get_character_manager
+            cm = get_character_manager()
+            if not cm:
+                return json.dumps({"status": "error", "message": "Character system not enabled"}, ensure_ascii=False)
+            # For web UI, use "web_user" as the bound user
+            user_id = "web_user"
+            char = cm.activate_character(character_id, user_id)
+            if not char:
+                return json.dumps({"status": "error", "message": "Character not found"}, ensure_ascii=False)
+            return json.dumps({"status": "success", "character": char.to_dict()}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Character activate error: {e}")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+
+class CharacterDeactivateHandler:
+    """POST /api/characters/{id}/deactivate — deactivate a character"""
+
+    def POST(self, character_id: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from characters.registry import get_character_manager
+            cm = get_character_manager()
+            if not cm:
+                return json.dumps({"status": "error", "message": "Character system not enabled"}, ensure_ascii=False)
+            ok = cm.deactivate_character(character_id)
+            if not ok:
+                return json.dumps({"status": "error", "message": "Character not found"}, ensure_ascii=False)
+            return json.dumps({"status": "success"}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Character deactivate error: {e}")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+
+class CharacterHistoryHandler:
+    """GET /api/characters/{id}/history — list conversation sessions for this character"""
+
+    def GET(self, character_id: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from characters.registry import get_character_manager
+            cm = get_character_manager()
+            if not cm:
+                return json.dumps({"status": "error", "message": "Character system not enabled"})
+            char = cm.get_character(character_id)
+            if not char:
+                return json.dumps({"status": "error", "message": "Character not found"})
+            from agent.memory import get_conversation_store
+            store = get_conversation_store()
+            params = web.input(page='1', page_size='50')
+            result = store.list_sessions(
+                channel_type="weixin",
+                page=int(params.page),
+                page_size=int(params.page_size),
+            )
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Character history error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class CharacterMemoryHandler:
+    """GET /api/characters/{id}/memory — view character memory summary"""
+
+    def GET(self, character_id: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from characters.registry import get_character_manager
+            cm = get_character_manager()
+            if not cm:
+                return json.dumps({"status": "error", "message": "Character system not enabled"})
+            char = cm.get_character(character_id)
+            if not char:
+                return json.dumps({"status": "error", "message": "Character not found"})
+            workspace = cm.store.get_character_workspace(character_id)
+            memory_file = os.path.join(workspace, "MEMORY.md")
+            memory_content = ""
+            if os.path.exists(memory_file):
+                with open(memory_file, "r", encoding="utf-8") as f:
+                    memory_content = f.read()
+            return json.dumps(
+                {"status": "success", "character_id": character_id, "memory": memory_content},
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            logger.error(f"[WebChannel] Character memory error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class CharacterExportHandler:
+    """GET /api/characters/{id}/export — export conversation history"""
+
+    def GET(self, character_id: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from characters.registry import get_character_manager
+            cm = get_character_manager()
+            if not cm:
+                return json.dumps({"status": "error", "message": "Character system not enabled"})
+            char = cm.get_character(character_id)
+            if not char:
+                return json.dumps({"status": "error", "message": "Character not found"})
+            params = web.input(format="json")
+            fmt = params.get("format", "json")
+            from agent.memory import get_conversation_store
+            store = get_conversation_store()
+            # Use the character's bound user as the session_id
+            user_id = char.bound_user_id
+            if not user_id:
+                return json.dumps({"status": "error", "message": "Character has no bound user"})
+            if fmt == "markdown":
+                return json.dumps(
+                    {"status": "success", "format": "markdown", "content": "Export in markdown format"},
+                    ensure_ascii=False,
+                )
+            # Default: JSON format
+            agent_key = f"{user_id}:{character_id}"
+            messages = store.load_messages(agent_key, max_turns=1000)
+            return json.dumps(
+                {"status": "success", "character": char.to_dict(), "messages": messages},
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            logger.error(f"[WebChannel] Character export error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})

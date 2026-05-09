@@ -232,6 +232,18 @@ available_setting = {
     #     {"name": "my-api", "type": "sse", "url": "http://localhost:8000/sse"}
     #   ]
     "mcp_servers": [],
+    # Character system (AI character companion platform)
+    "character_active": True,  # 是否启用角色系统
+    "character_workspace_base": "~/cow/characters",  # 角色 workspace 根目录
+    # Reply segmentation (human-like chunked replies)
+    "reply_segmentation": True,  # 是否启用拟人化分段回复
+    "reply_segment_max_chars": 200,  # 分段最大字符数
+    "reply_segment_delay_min": 1.5,  # 段间最小延时（秒）
+    "reply_segment_delay_max": 3.5,  # 段间最大延时（秒）
+    # Persona compliance validation
+    "persona_validation": False,  # 是否启用人设合规校验
+    "persona_validation_threshold": 0.7,  # 合规度阈值（0~1）
+    "persona_validation_max_retries": 2,  # 校验失败最大重试次数
 }
 
 

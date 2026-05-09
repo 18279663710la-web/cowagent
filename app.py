@@ -353,6 +353,9 @@ def run():
         # latency isn't dominated by npx package downloads.
         _warmup_mcp_tools()
 
+        # Initialize character system if enabled
+        _init_character_system()
+
         logger.info(f"[App] Starting channels: {channel_names}")
 
         _channel_mgr = ChannelManager()
@@ -363,6 +366,56 @@ def run():
     except Exception as e:
         logger.error("App startup failed!")
         logger.exception(e)
+
+
+def _init_character_system():
+    """Initialize AI character system when character_active is enabled."""
+    if not conf().get("character_active", False):
+        return
+    try:
+        from characters.character_manager import CharacterManager
+        from characters.character_store import CharacterStore
+        from characters.proactive_service import ProactiveService
+        from characters.registry import set_character_manager, set_proactive_service
+
+        store = CharacterStore()
+        char_mgr = CharacterManager(store)
+        proactive_svc = ProactiveService(character_manager=char_mgr)
+
+        # Wire proactive service to character manager
+        char_mgr._proactive_service = proactive_svc
+
+        # Re-sync persona files for all active characters (picks up template changes)
+        for char in char_mgr.list_characters():
+            if char.is_active:
+                char_mgr._sync_persona_to_workspace(char)
+                logger.info(f"[App] Synced persona for active character: {char.name}")
+
+        logger.info(f"[App] Character system initialized (workspace: {store._base_dir})")
+
+        # Store in shared registry (avoids __main__ vs app module confusion)
+        set_character_manager(char_mgr)
+        set_proactive_service(proactive_svc)
+
+        # Also keep legacy references for internal app.py use
+        global _character_manager, _proactive_service
+        _character_manager = char_mgr
+        _proactive_service = proactive_svc
+    except Exception as e:
+        logger.error(f"[App] Failed to initialize character system: {e}")
+
+
+# Module-level references, populated by _init_character_system()
+_character_manager = None
+_proactive_service = None
+
+
+def get_character_manager():
+    return _character_manager
+
+
+def get_proactive_service():
+    return _proactive_service
 
 
 if __name__ == "__main__":
