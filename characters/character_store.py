@@ -108,17 +108,22 @@ class CharacterStore:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except Exception as e:
+            logger.error(f"[CharacterStore] Failed to read bindings file, returning empty: {e}")
             return {}
 
     def _write_bindings(self, bindings: dict):
         path = self._bindings_file()
-        with open(path, "w", encoding="utf-8") as f:
+        # Atomic write: tmp file + rename, prevents corruption on crash
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(bindings, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)  # atomic on POSIX and Windows
 
     def get_active_character_id(self, user_id: str) -> Optional[str]:
-        bindings = self._read_bindings()
-        return bindings.get(user_id)
+        with self._lock:
+            bindings = self._read_bindings()
+            return bindings.get(user_id)
 
     def set_active_character(self, user_id: str, character_id: str):
         with self._lock:

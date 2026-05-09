@@ -226,3 +226,47 @@ DINGTALK = "dingtalk"
 WECOM_BOT = "wecom_bot"
 QQ = "qq"
 WEIXIN = "weixin"
+
+
+# ── Model → Bot type resolution (shared by Bridge and AgentBridge) ────
+
+_MODEL_BOT_TYPE_MAP = {
+    "wenxin": BAIDU, "wenxin-4": BAIDU,
+    "xunfei": XUNFEI, QWEN: QWEN_DASHSCOPE,
+    QIANFAN: QIANFAN,
+    MODELSCOPE: MODELSCOPE,
+}
+
+_MODEL_PREFIX_MAP = [
+    ("qwen", QWEN_DASHSCOPE), ("qwq", QWEN_DASHSCOPE), ("qvq", QWEN_DASHSCOPE),
+    ("gemini", GEMINI), ("glm", ZHIPU_AI), ("claude", CLAUDEAPI),
+    ("moonshot", MOONSHOT), ("kimi", MOONSHOT),
+    ("doubao", DOUBAO), ("deepseek", DEEPSEEK),
+    ("ernie", QIANFAN),
+]
+
+
+def resolve_bot_type(model_name, configured_bot_type="", use_linkai=False, linkai_api_key=""):
+    """
+    Resolve bot type from model name string.
+    Single source of truth — used by Bridge.__init__ and AgentLLMModel.
+    """
+    if use_linkai and linkai_api_key:
+        return LINKAI
+    if configured_bot_type:
+        return configured_bot_type
+    if not model_name or not isinstance(model_name, str):
+        return OPENAI
+    if model_name in _MODEL_BOT_TYPE_MAP:
+        return _MODEL_BOT_TYPE_MAP[model_name]
+    if model_name.lower().startswith("minimax") or model_name in ["abab6.5-chat"]:
+        return MiniMax
+    if model_name in [QWEN_TURBO, QWEN_PLUS, QWEN_MAX]:
+        return QWEN_DASHSCOPE
+    if model_name in [MOONSHOT, "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]:
+        return MOONSHOT
+    lowered = model_name.lower()
+    for prefix, btype in _MODEL_PREFIX_MAP:
+        if lowered.startswith(prefix):
+            return btype
+    return OPENAI

@@ -3,6 +3,7 @@ Agent Bridge - Integrates Agent system with existing COW bridge
 """
 
 import os
+import threading
 from typing import Optional, List
 
 from agent.protocol import Agent, LLMModel, LLMRequest
@@ -66,20 +67,6 @@ class AgentLLMModel(LLMModel):
     LLM Model adapter that uses COW's existing bot infrastructure
     """
 
-    _MODEL_BOT_TYPE_MAP = {
-        "wenxin": const.BAIDU, "wenxin-4": const.BAIDU,
-        "xunfei": const.XUNFEI, const.QWEN: const.QWEN_DASHSCOPE,
-        const.QIANFAN: const.QIANFAN,
-        const.MODELSCOPE: const.MODELSCOPE,
-    }
-    _MODEL_PREFIX_MAP = [
-        ("qwen", const.QWEN_DASHSCOPE), ("qwq", const.QWEN_DASHSCOPE), ("qvq", const.QWEN_DASHSCOPE),
-        ("gemini", const.GEMINI), ("glm", const.ZHIPU_AI), ("claude", const.CLAUDEAPI),
-        ("moonshot", const.MOONSHOT), ("kimi", const.MOONSHOT),
-        ("doubao", const.DOUBAO), ("deepseek", const.DEEPSEEK),
-        ("ernie", const.QIANFAN),
-    ]
-
     def __init__(self, bridge: Bridge, bot_type: str = "chat"):
         super().__init__(model=conf().get("model", const.GPT_41))
         self.bridge = bridge
@@ -96,31 +83,14 @@ class AgentLLMModel(LLMModel):
         pass
 
     def _resolve_bot_type(self, model_name: str) -> str:
-        """Resolve bot type from model name, matching Bridge.__init__ logic."""
-        if conf().get("use_linkai", False) and conf().get("linkai_api_key"):
-            return const.LINKAI
-        # Support custom bot type configuration
-        configured_bot_type = conf().get("bot_type")
-        if configured_bot_type:
-            return configured_bot_type
-       
-        if not model_name or not isinstance(model_name, str):
-            return const.OPENAI
-        if model_name in self._MODEL_BOT_TYPE_MAP:
-            return self._MODEL_BOT_TYPE_MAP[model_name]
-        if model_name.lower().startswith("minimax") or model_name in ["abab6.5-chat"]:
-            return const.MiniMax
-        if model_name in [const.QWEN_TURBO, const.QWEN_PLUS, const.QWEN_MAX]:
-            return const.QWEN_DASHSCOPE
-        if model_name in [const.MOONSHOT, "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]:
-            return const.MOONSHOT
-        if conf().get("bot_type") == "modelscope":
-            return const.MODELSCOPE
-        lowered_model = model_name.lower()
-        for prefix, btype in self._MODEL_PREFIX_MAP:
-            if lowered_model.startswith(prefix):
-                return btype
-        return const.OPENAI
+        """Resolve bot type from model name — delegates to shared function in const.py."""
+        from config import conf
+        return const.resolve_bot_type(
+            model_name,
+            configured_bot_type=conf().get("bot_type", ""),
+            use_linkai=conf().get("use_linkai", False),
+            linkai_api_key=conf().get("linkai_api_key", ""),
+        )
 
     @property
     def bot(self):
@@ -266,6 +236,7 @@ class AgentBridge:
         self.bridge = bridge
         self.agents = {}  # session_id -> Agent instance mapping
         self.default_agent = None  # For backward compatibility (no session_id)
+        self._agent_lock = threading.Lock()  # protects agents dict + default_agent
         self.agent: Optional[Agent] = None
         self.scheduler_initialized = False
         self.character_manager = None  # injected later via set_character_manager()
@@ -340,49 +311,31 @@ class AgentBridge:
     
     def get_agent(self, session_id: str = None) -> Optional[Agent]:
         """
-        Get agent instance for the given session.
-
-        When the character system is active, resolves the user's active character
-        and routes to the character's dedicated agent workspace.
-
-        Args:
-            session_id: Session identifier (e.g., user_id). If None, returns default agent.
-
-        Returns:
-            Agent instance for this session
+        Get agent instance for the given session (thread-safe).
         """
-        # If no session_id, use default agent (backward compatibility)
         if session_id is None:
-            if self.default_agent is None:
-                self._init_default_agent()
-            return self.default_agent
+            with self._agent_lock:
+                if self.default_agent is None:
+                    self._init_default_agent()
+                return self.default_agent
 
-        # Character-aware routing
         if self._is_character_active():
             char = self.character_manager.get_active_character(session_id)
-            # Fallback: channels may use different user IDs than the one used
-            # to activate the character in the web UI (e.g. WeChat user IDs,
-            # web session_xxx IDs). When the exact session_id doesn't match,
-            # pick the first active character in the system.
             if not char:
                 active_chars = [c for c in self.character_manager.list_characters() if c.is_active]
                 if active_chars:
                     char = active_chars[0]
-                    logger.debug(
-                        f"[AgentBridge] Using active character '{char.name}' "
-                        f"for session_id={session_id}"
-                    )
             if char:
                 agent_key = self._character_agent_key(session_id, char.id)
-                if agent_key not in self.agents:
-                    self._init_agent_for_character(session_id, char)
-                return self.agents.get(agent_key)
+                with self._agent_lock:
+                    if agent_key not in self.agents:
+                        self._init_agent_for_character(session_id, char)
+                    return self.agents.get(agent_key)
 
-        # Standard routing (no character system)
-        if session_id not in self.agents:
-            self._init_agent_for_session(session_id)
-
-        return self.agents[session_id]
+        with self._agent_lock:
+            if session_id not in self.agents:
+                self._init_agent_for_session(session_id)
+            return self.agents[session_id]
 
     @staticmethod
     def _character_agent_key(user_id: str, character_id: str) -> str:
@@ -902,7 +855,8 @@ class AgentBridge:
                 f"for session={session_id}: {e}"
             )
 
-        agent = self.agents.get(session_id)
+        with self._agent_lock:
+            agent = self.agents.get(session_id)
         if agent:
             try:
                 with agent.messages_lock:
@@ -1049,21 +1003,18 @@ class AgentBridge:
         return cleaned
 
     def clear_session(self, session_id: str):
-        """
-        Clear a specific session's agent and conversation history
-        
-        Args:
-            session_id: Session identifier to clear
-        """
-        if session_id in self.agents:
-            logger.info(f"[AgentBridge] Clearing session: {session_id}")
-            del self.agents[session_id]
-    
+        """Clear a specific session (thread-safe)."""
+        with self._agent_lock:
+            if session_id in self.agents:
+                logger.info(f"[AgentBridge] Clearing session: {session_id}")
+                del self.agents[session_id]
+
     def clear_all_sessions(self):
-        """Clear all agent sessions"""
-        logger.info(f"[AgentBridge] Clearing all sessions ({len(self.agents)} total)")
-        self.agents.clear()
-        self.default_agent = None
+        """Clear all agent sessions (thread-safe)."""
+        with self._agent_lock:
+            logger.info(f"[AgentBridge] Clearing all sessions ({len(self.agents)} total)")
+            self.agents.clear()
+            self.default_agent = None
     
     def refresh_all_skills(self) -> int:
         """
@@ -1087,12 +1038,13 @@ class AgentBridge:
 
         refreshed_count = 0
 
-        # Collect all agent instances to refresh
-        agents_to_refresh = []
-        if self.default_agent:
-            agents_to_refresh.append(("default", self.default_agent))
-        for session_id, agent in self.agents.items():
-            agents_to_refresh.append((session_id, agent))
+        # Snapshot agent references under lock
+        with self._agent_lock:
+            agents_to_refresh = []
+            if self.default_agent:
+                agents_to_refresh.append(("default", self.default_agent))
+            for session_id, agent in self.agents.items():
+                agents_to_refresh.append((session_id, agent))
 
         for label, agent in agents_to_refresh:
             # Refresh skills

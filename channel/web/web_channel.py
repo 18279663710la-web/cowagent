@@ -141,6 +141,18 @@ class WebChannel(ChatChannel):
         """生成唯一的请求ID"""
         return str(uuid.uuid4())
 
+    def _schedule_queue_cleanup(self, request_id: str, delay_seconds: int):
+        """Deferred cleanup of orphaned SSE/request entries after client disconnect."""
+        import threading
+
+        def _clean():
+            import time
+            time.sleep(delay_seconds)
+            self.sse_queues.pop(request_id, None)
+            self.request_to_session.pop(request_id, None)
+
+        threading.Thread(target=_clean, daemon=True, name=f"cleanup-{request_id[:8]}").start()
+
     def send(self, reply: Reply, context: Context):
         try:
             if reply.type in self.NOT_SUPPORT_REPLYTYPE:
@@ -494,6 +506,11 @@ class WebChannel(ChatChannel):
         finally:
             if done:
                 self.sse_queues.pop(request_id, None)
+                self.request_to_session.pop(request_id, None)
+            else:
+                # Client disconnected before done; mark for deferred cleanup
+                # to avoid orphaned queues leaking memory.
+                self._schedule_queue_cleanup(request_id, idle_timeout)
 
     def poll_response(self):
         """
