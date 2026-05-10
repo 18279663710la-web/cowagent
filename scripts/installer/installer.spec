@@ -4,11 +4,11 @@
 import sys
 from pathlib import Path
 
-_payload = Path(SPECPATH).parent / "payload"
+_payload = Path(SPECPATH) / "payload"
 
 a = Analysis(
-    [str(Path(SPECPATH).parent / "installer_gui.py")],
-    pathex=[str(Path(SPECPATH).parent)],
+    [str(Path(SPECPATH) / "installer_gui.py")],
+    pathex=[str(Path(SPECPATH)), str(Path(SPECPATH).parent)],
     binaries=[],
     datas=[
         (str(_payload), "payload"),
@@ -52,5 +52,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(Path(SPECPATH).parent / "payload" / "cowagent" / "assets" / "cow.ico") if (Path(SPECPATH).parent / "payload" / "cowagent" / "assets" / "cow.ico").exists() else None,
+    icon=None,  # TODO: add icon file
 )
