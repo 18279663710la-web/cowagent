@@ -5,44 +5,55 @@
 
 ## 环境要求
 
-| 依赖 | 说明 | 必需 |
-|------|------|------|
-| Python 3.9 ~ 3.13 | 运行环境 | 是 |
-| Git | 克隆项目 | 是 |
-| ffmpeg | 语音消息处理 | 否（推荐安装） |
+| 依赖 | 版本 | 说明 | 必需 |
+|------|------|------|------|
+| Python | 3.9 ~ 3.13 | 运行环境 | 是 |
+| Git | 任意 | 克隆和管理项目 | 是 |
+| ffmpeg | 任意 | 语音消息处理（pydub 依赖） | 否 |
 
 支持 Windows 和 macOS。
 
 ---
 
-## 快速安装
+## 安装
 
 ### Windows
 
-**方式一：一键安装（推荐）**
+**方式一：一键安装**
 
-以管理员身份打开 PowerShell，执行：
+以管理员身份打开 PowerShell：
 
 ```powershell
-irm https://raw.githubusercontent.com/18279663710la-web/cowagent/master/scripts/setup.ps1 | iex
+# 先下载脚本（或直接 clone 后在项目目录中运行）
+cd cowagent
+.\scripts\setup.ps1
 ```
 
-脚本自动安装 Python、Git、ffmpeg，克隆项目，创建虚拟环境，安装全部依赖。
+脚本会自动安装缺失的系统依赖（Python、Git、ffmpeg），创建虚拟环境，安装 pip 包和 cow CLI。
+
+可选参数：`-SkipSystem`（跳过系统依赖安装）、`-WithBrowser`（附带浏览器工具）。
 
 **方式二：手动安装**
 
 ```powershell
-# 1. 安装 Python (python.org 下载，勾选 Add to PATH)
-# 2. 安装 Git (git-scm.com 下载)
-# 3. 安装 ffmpeg (winget install ffmpeg)
+# 1. 安装 Python 3.12
+#    从 https://www.python.org/downloads/ 下载，勾选 "Add to PATH"
+
+# 2. 安装 Git
+#    从 https://git-scm.com/download/win 下载
+
+# 3. 安装 ffmpeg（可选，语音功能需要）
+winget install ffmpeg
 
 # 4. 克隆项目
 git clone https://github.com/18279663710la-web/cowagent.git
 cd cowagent
 
-# 5. 创建虚拟环境并安装
+# 5. 创建虚拟环境
 python -m venv venv
 venv\Scripts\activate
+
+# 6. 安装依赖
 pip install -r requirements.txt
 pip install -r requirements-optional.txt
 pip install -e .
@@ -50,13 +61,16 @@ pip install -e .
 
 ### macOS
 
-**方式一：一键安装（推荐）**
+**方式一：一键安装**
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/18279663710la-web/cowagent/master/scripts/setup.sh)
+cd cowagent
+bash scripts/setup.sh
 ```
 
-脚本自动安装 Homebrew、Python、Git、ffmpeg，克隆项目，创建虚拟环境，安装全部依赖。
+脚本会自动安装 Homebrew（如未安装）、Python、Git、ffmpeg，创建虚拟环境，安装 pip 包和 cow CLI。
+
+可选参数：`--skip-system`、`--with-browser`、`--dev`。
 
 **方式二：手动安装**
 
@@ -64,16 +78,18 @@ bash <(curl -fsSL https://raw.githubusercontent.com/18279663710la-web/cowagent/m
 # 1. 安装 Homebrew（如未安装）
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# 2. 安装依赖
+# 2. 安装系统依赖
 brew install python@3.12 git ffmpeg
 
 # 3. 克隆项目
 git clone https://github.com/18279663710la-web/cowagent.git
 cd cowagent
 
-# 4. 创建虚拟环境并安装
+# 4. 创建虚拟环境
 python3 -m venv venv
 source venv/bin/activate
+
+# 5. 安装依赖
 pip3 install -r requirements.txt
 pip3 install -r requirements-optional.txt
 pip3 install -e .
