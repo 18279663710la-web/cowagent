@@ -94,9 +94,27 @@
 
 # 🚀 快速开始
 
-项目提供了一键安装、配置、启动、管理程序的脚本，推荐使用脚本快速运行，也可以根据下文中的详细指引一步步安装运行。
+项目提供了一键安装所有环境依赖的脚本，也支持一键运行和配置。
 
-在终端执行以下命令：
+### 一键环境安装（推荐首次使用）
+
+安装所有系统依赖（Python、Git、ffmpeg）+ Python 包 + Cow CLI：
+
+**macOS：**
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/18279663710la-web/cowagent/master/scripts/setup.sh)
+```
+
+**Windows（PowerShell，建议以管理员身份运行）：**
+```powershell
+irm https://raw.githubusercontent.com/18279663710la-web/cowagent/master/scripts/setup.ps1 | iex
+```
+
+> 可选参数：`--with-browser` 同时安装浏览器自动化工具（Playwright + Chromium）。
+
+### 一键运行（含配置向导）
+
+以下脚本会 clone 项目、安装依赖、提供交互式配置（选模型/通道）并启动：
 
 **macOS：**
 ```bash
