@@ -367,10 +367,9 @@ class ChatChannel(Channel):
     @staticmethod
     def _split_text_for_chunking(text: str, max_chars: int = 100) -> list[str]:
         """
-        Split text ONLY on AI-inserted || markers.
-
-        If the AI doesn't use ||, the entire reply is sent as one message.
-        This forces the AI to take responsibility for segmentation.
+        Split text on AI-inserted || markers. Falls back to paragraph
+        boundaries (double-newline) then single-newline if no || present.
+        This keeps replies from being delivered as a single wall of text.
         """
         import re
 
@@ -380,7 +379,18 @@ class ChatChannel(Channel):
             if len(segments) > 1:
                 return segments
 
-        # No || markers: send as a single message
+        # No || markers — fallback to paragraph boundaries
+        if "\n\n" in text:
+            segments = [p.strip() for p in text.split("\n\n") if p.strip()]
+            if len(segments) > 1:
+                return segments
+
+        # Still one chunk — try single newlines for long text
+        if "\n" in text and len(text) > max_chars:
+            segments = [p.strip() for p in text.split("\n") if p.strip()]
+            if len(segments) > 1:
+                return segments
+
         return [text]
     
     def _extract_and_send_images_segmented(self, reply: Reply, context: Context):
