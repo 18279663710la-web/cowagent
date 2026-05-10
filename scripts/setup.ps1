@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     CowAgent one-click environment setup for Windows.
@@ -134,6 +134,8 @@ function Install-FFmpeg {
 
 # ── Python environment ──────────────────────────────────────────────
 function Assert-Python {
+    # Collect all matching Python binaries, then prefer native Windows Python
+    $candidates = @()
     foreach ($cmd in @("python3", "python")) {
         $bin = Get-Command $cmd -ErrorAction SilentlyContinue
         if (-not $bin) { continue }
@@ -142,15 +144,37 @@ function Assert-Python {
             $parts = $ver -split '\.'
             $major = [int]$parts[0]; $minor = [int]$parts[1]
             if ($major -eq 3 -and $minor -ge 9 -and $minor -le 13) {
-                $script:PythonCmd = $bin.Source
-                $script:PythonVer = $ver
-                Write-Good "Python $ver detected: $PythonCmd"
-                return
+                $isWindowsNative = $bin.Source -notmatch '(msys|cygwin|mingw)'
+                $candidates += @{ Source = $bin.Source; Version = $ver; Native = $isWindowsNative }
             }
         } catch {}
     }
-    Write-Fail "Python 3.9-3.13 not found. Run script without -SkipSystem to install it."
-    exit 1
+    if ($candidates.Count -eq 0) {
+        Write-Fail "Python 3.9-3.13 not found. Run script without -SkipSystem to install it."
+        exit 1
+    }
+    # Prefer Windows-native Python, fall back to first available
+    $pick = ($candidates | Where-Object { $_.Native } | Select-Object -First 1)
+    if (-not $pick) { $pick = $candidates[0] }
+    $script:PythonCmd = $pick.Source
+    $script:PythonVer = $pick.Version
+    if (-not $pick.Native) {
+        Write-Warn "MSYS2/Cygwin Python detected. For best results, install from python.org."
+    }
+    Write-Good "Python $script:PythonVer detected: $PythonCmd"
+}
+
+function Get-VenvPython {
+    param([string]$VenvDir)
+    # Windows-style venv (from python.org)
+    $winPy = Join-Path $VenvDir "Scripts\python.exe"
+    if (Test-Path $winPy) { return $winPy }
+    # Unix-style venv (from MSYS2/Git Bash Python)
+    $unixPy = Join-Path $VenvDir "bin\python"
+    $unixPyExe = Join-Path $VenvDir "bin\python.exe"
+    if (Test-Path $unixPyExe) { return $unixPyExe }
+    if (Test-Path $unixPy) { return $unixPy }
+    return $null
 }
 
 function New-Venv {
@@ -162,29 +186,30 @@ function New-Venv {
         & $PythonCmd -m venv $venvDir
         Write-Good "Virtual environment created"
     }
-
-    $activateScript = Join-Path $venvDir "Scripts\Activate.ps1"
-    . $activateScript
-    Write-Good "Virtual environment activated"
-
-    # Upgrade pip
-    & python -m pip install --upgrade pip -q 2>&1 | Out-Null
+    $script:VenvPython = Get-VenvPython $venvDir
+    if (-not $VenvPython) {
+        Write-Fail "Virtual environment created but cannot find python in it."
+        exit 1
+    }
+    Write-Good "Virtual environment activated (using $VenvPython)"
+    # Upgrade pip inside the venv
+    & $VenvPython -m pip install --upgrade pip -q 2>&1 | Out-Null
 }
 
 function Install-PipDeps {
     Write-Step "Installing core dependencies (requirements.txt)..."
     $prevEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-    & pip install -r "$BaseDir\requirements.txt"
+    & $VenvPython -m pip install -r "$BaseDir\requirements.txt"
     if ($LASTEXITCODE -ne 0) {
         Write-Warn "Some dependencies had issues. Trying with Tsinghua mirror..."
-        & pip install -r "$BaseDir\requirements.txt" -i https://pypi.tuna.tsinghua.edu.cn/simple
+        & $VenvPython -m pip install -r "$BaseDir\requirements.txt" -i https://pypi.tuna.tsinghua.edu.cn/simple
     }
     $ErrorActionPreference = $prevEAP
     Write-Good "Core dependencies installed"
 
     Write-Step "Installing optional dependencies (requirements-optional.txt)..."
     $prevEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-    & pip install -r "$BaseDir\requirements-optional.txt"
+    & $VenvPython -m pip install -r "$BaseDir\requirements-optional.txt"
     if ($LASTEXITCODE -ne 0) {
         Write-Warn "Some optional dependencies failed — voice/file features may be limited"
     }
@@ -193,21 +218,21 @@ function Install-PipDeps {
 
     Write-Step "Installing Cow CLI (pip install -e .)..."
     $prevEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-    & pip install -e $BaseDir
+    & $VenvPython -m pip install -e $BaseDir
     $ErrorActionPreference = $prevEAP
     Write-Good "Cow CLI installed"
 
     if ($Dev) {
         Write-Step "Installing dev dependencies..."
-        & pip install pytest pytest-asyncio pytest-cov
+        & $VenvPython -m pip install pytest pytest-asyncio pytest-cov
         Write-Good "Dev dependencies installed"
     }
 }
 
 function Install-Browser {
     Write-Step "Installing browser automation tools..."
-    & pip install playwright
-    & playwright install chromium
+    & $VenvPython -m pip install playwright
+    & $VenvPython -m playwright install chromium
     Write-Good "Browser tools installed (Chromium + Playwright)"
 }
 
@@ -267,21 +292,21 @@ function Test-Setup {
     $allOk = $true
 
     Write-Host ""
-    Write-Host "  Python:      $(& python --version 2>&1)"
-    Write-Host "  pip:         $(& pip --version 2>&1)"
+    Write-Host "  Python:      $(& $VenvPython --version 2>&1)"
+    Write-Host "  pip:         $(& $VenvPython -m pip --version 2>&1)"
     Write-Host "  Git:         $(try { & git --version } catch { 'NOT FOUND' })"
     Write-Host "  ffmpeg:      $(try { (& ffmpeg -version | Select-Object -First 1) } catch { 'NOT FOUND' })"
 
     if (Test-Command cow) {
         Write-Host "  cow CLI:     $(Get-Command cow).Source"
     } else {
-        $scriptsDir = & python -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>$null
+        $scriptsDir = & $VenvPython -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>$null
         Write-Warn "  cow CLI:     NOT IN PATH (check $scriptsDir)"
     }
 
     # Quick import test
     try {
-        & python -c "import requests, yaml, dotenv; print('  Core libs:   OK')"
+        & $VenvPython -c "import requests, yaml, dotenv; print('  Core libs:   OK')"
     } catch {
         Write-Warn "  Core libs:   Some imports failed: $_"
         $allOk = $false
