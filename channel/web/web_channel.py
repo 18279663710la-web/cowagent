@@ -209,12 +209,15 @@ class WebChannel(ChatChannel):
                     logger.debug(f"SSE skipped http media reply for request {request_id}")
                     return
 
-                self.sse_queues[request_id].put({
+                event_data = {
                     "type": "done",
                     "content": content,
                     "request_id": request_id,
                     "timestamp": time.time()
-                })
+                }
+                if context.get("seg_final"):
+                    event_data["final"] = True
+                self.sse_queues[request_id].put(event_data)
                 logger.debug(f"SSE done sent for request {request_id}")
                 return
 

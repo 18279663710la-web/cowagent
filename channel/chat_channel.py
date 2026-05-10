@@ -357,6 +357,8 @@ class ChatChannel(Channel):
         for i, segment in enumerate(segments):
             logger.info(f"[chat_channel] Seg {i+1}/{len(segments)}: {segment[:60]}...")
             segment_reply = Reply(ReplyType.TEXT, segment)
+            if i == len(segments) - 1:
+                context["seg_final"] = True
             self._send(segment_reply, context)
             if i < len(segments) - 1:
                 delay = random.uniform(delay_min, delay_max)

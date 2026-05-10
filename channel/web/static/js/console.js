@@ -1328,10 +1328,6 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                 scrollChatToBottom();
 
             } else if (item.type === 'done') {
-                done = true;
-                es.close();
-                delete activeStreams[requestId];
-
                 // item.content may be empty when "done" is only a stream-close signal after media.
                 const finalText = item.content || accumulatedText;
 
@@ -1347,6 +1343,22 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo) {
                     applyHighlighting(botEl);
                 }
                 scrollChatToBottom();
+
+                if (!item.final) {
+                    // Intermediate segment — more coming via || delimiter.
+                    // Reconnect to receive the next segment as a new message bubble.
+                    es.close();
+                    delete activeStreams[requestId];
+                    botEl = null;
+                    accumulatedText = '';
+                    setTimeout(connect, 300);
+                    return;
+                }
+
+                // Final segment — clean shutdown.
+                done = true;
+                es.close();
+                delete activeStreams[requestId];
 
                 if (titleInfo) {
                     generateSessionTitle(titleInfo.sid, titleInfo.userMsg, '');
