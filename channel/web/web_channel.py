@@ -505,8 +505,11 @@ class WebChannel(ChatChannel):
                     break
         finally:
             if done:
-                self.sse_queues.pop(request_id, None)
-                self.request_to_session.pop(request_id, None)
+                # Defer cleanup — reply segmentation (|| delimiter) sends
+                # multiple segments through the same request_id. The frontend
+                # reconnects after each "done" event, so the queue must stay
+                # alive long enough for the next segment to arrive.
+                self._schedule_queue_cleanup(request_id, 120)
             else:
                 # Client disconnected before done; mark for deferred cleanup
                 # to avoid orphaned queues leaking memory.
