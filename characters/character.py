@@ -16,12 +16,17 @@ class Character:
     name: str
     gender: str = "保密"
     age: int = 25
+    occupation: str = ""                        # ex-skill Layer 1: 职业
     personality: str = ""
     language_style: str = ""
     catchphrases: list = field(default_factory=list)
     interests: list = field(default_factory=list)
     background: str = ""
     relationship: str = "朋友"
+    mbti: str = ""                              # ex-skill Layer 1: MBTI
+    zodiac: str = ""                            # ex-skill Layer 1: 星座
+    emotional_expression: str = ""              # ex-skill Layer 3: 情绪表达模式
+    interaction_style: str = ""                 # ex-skill Layer 4: 关系互动风格
     rules: list = field(default_factory=list)
     avatar: str = ""
 

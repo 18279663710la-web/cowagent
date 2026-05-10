@@ -69,7 +69,8 @@ def test_store_list_all():
     store = _temp_store()
     store.save(_temp_char(name="A"))
     store.save(_temp_char(name="B"))
-    assert len(store.list_all()) == 2
+    # builtin template is auto-created on first init
+    assert len(store.list_all()) == 3
 
 
 def test_store_delete():
@@ -176,9 +177,9 @@ def test_persona_builder():
     p = b.build_persona(c)
     assert "小美" in p
     assert "活泼" in p
-    assert "核心规则" in p
+    assert "Layer 0" in p  # ex-skill template
     assert "||" in p  # segmentation instruction
-    assert "分段回复规则" in p
+    assert "输出格式" in p  # output format section
 
 
 def test_persona_workspace_write():
@@ -257,11 +258,11 @@ def test_segmentation_no_fallback_on_comma():
 
 
 def test_segmentation_no_fallback_on_paragraph():
-    """Without ||, paragraph breaks are NOT split (by design)."""
+    """Without ||, paragraph breaks now trigger fallback split on \\n\\n."""
     from channel.chat_channel import ChatChannel
     cc = ChatChannel.__new__(ChatChannel)
     segs = cc._split_text_for_chunking("想你啦\n\n今天过得怎么样\n\n早点休息")
-    assert len(segs) == 1  # no || → no split
+    assert len(segs) == 3  # fallback: split on double-newline
 
 
 def test_segmentation_pipe_with_spaces():
