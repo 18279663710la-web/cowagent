@@ -48,8 +48,9 @@ class CharacterStore:
     # ── builtin template ──────────────────────────────────────────────
 
     def _ensure_builtin_template(self):
-        """Create or update the built-in template character."""
-        existing = self.load(self.BUILTIN_TEMPLATE_ID)
+        """Create the built-in template character if it does not exist."""
+        if self.load(self.BUILTIN_TEMPLATE_ID):
+            return  # already exists, preserve user edits
         from characters.character import Character
         template = Character(
             id=self.BUILTIN_TEMPLATE_ID,
