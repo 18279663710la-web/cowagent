@@ -2247,6 +2247,12 @@ class CharacterDetailHandler:
             cm = get_character_manager()
             if not cm:
                 return json.dumps({"status": "error", "message": "Character system not enabled"})
+
+            # Prevent deletion of the builtin template character
+            char = cm.store.load(character_id) if hasattr(cm, 'store') else None
+            if char and getattr(char, 'builtin', False):
+                return json.dumps({"status": "error", "message": "Cannot delete builtin template character"})
+
             ok = cm.delete_character(character_id)
             if not ok:
                 return json.dumps({"status": "error", "message": "Character not found"})

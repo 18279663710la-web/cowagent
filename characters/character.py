@@ -29,6 +29,7 @@ class Character:
     id: str = ""
     is_active: bool = False
     bound_user_id: str = ""
+    builtin: bool = False  # builtin template — cannot be deleted via web API
     created_at: str = ""
     updated_at: str = ""
 
