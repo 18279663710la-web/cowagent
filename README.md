@@ -5,13 +5,77 @@
 
 ## 环境要求
 
+### 系统依赖
+
 | 依赖 | 版本 | 说明 | 必需 |
 |------|------|------|------|
 | Python | 3.9 ~ 3.13 | 运行环境 | 是 |
-| Git | 任意 | 克隆和管理项目 | 是 |
-| ffmpeg | 任意 | 语音消息处理（pydub 依赖） | 否 |
+| pip | 任意 | Python 包管理 | 是 |
+| Git | 任意 | 克隆项目 | 是 |
+| ffmpeg | 任意 | 语音消息处理 | 否 |
 
-支持 Windows 和 macOS。
+### Python 依赖
+
+**核心（requirements.txt）**：
+
+```
+aiohttp  requests  chardet  Pillow  web.py  python-dotenv
+PyYAML  croniter  click  qrcode  wechatpy  zai-sdk
+dashscope  lark-oapi  dingtalk_stream  websocket-client  pycryptodome
+```
+
+**可选（requirements-optional.txt）**：
+
+```
+tiktoken  pydub  gTTS  edge-tts  elevenlabs  dulwich
+google-generativeai  pypdf  python-docx  openpyxl  python-pptx
+```
+
+### 支持平台
+
+Windows · macOS · Linux (Ubuntu/Debian)
+
+---
+
+## 从零开始搭建（空白 Ubuntu 环境）
+
+适用场景：刚装好的 Ubuntu 虚拟机或云服务器，什么都没装。
+
+```bash
+# 1. 更新系统包
+sudo apt update && sudo apt upgrade -y
+
+# 2. 安装系统依赖
+sudo apt install -y python3 python3-pip python3-venv python3-dev git ffmpeg
+
+# 3. 克隆项目
+git clone https://github.com/18279663710la-web/cowagent.git
+cd cowagent
+
+# 4. 创建虚拟环境
+python3 -m venv venv
+source venv/bin/activate
+
+# 5. 安装 Python 依赖
+pip install -r requirements.txt
+pip install -r requirements-optional.txt
+pip install -e .
+
+# 6. 生成配置文件
+cp config-template.json config.json
+
+# 7. 编辑 config.json，填入 DeepSeek API Key
+# nano config.json  →  找到 deepseek_api_key 填入你的 key
+
+# 8. 启动
+cow start
+
+# 9. 访问 Web 页面
+# 浏览器打开 http://<服务器IP>:9899/chat
+```
+
+> 国内服务器遇到 GitHub 克隆慢，用镜像：`git clone https://gitee.com/zhayujie/CowAgent.git`
+> pip 安装慢加清华源：`pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
 
 ---
 
