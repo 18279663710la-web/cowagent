@@ -26,13 +26,16 @@ class CharacterStore:
 
     DEFAULT_BASE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "characters")
 
+    # Source templates shipped in the repo — copied to data/ on first init
+    TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+
     BUILTIN_TEMPLATE_ID = "builtin_template"
 
     def __init__(self, base_dir: str = None):
         self._base_dir = expand_path(base_dir or self.DEFAULT_BASE)
         self._lock = threading.RLock()  # reentrant: set_active_character calls save() internally
         os.makedirs(self._base_dir, exist_ok=True)
-        self._ensure_builtin_template()
+        self._sync_templates()
 
     # ── path helpers ──────────────────────────────────────────────────
 
@@ -45,73 +48,25 @@ class CharacterStore:
     def _bindings_file(self) -> str:
         return os.path.join(self._base_dir, "bindings.json")
 
-    # ── builtin template ──────────────────────────────────────────────
+    # ── templates ────────────────────────────────────────────────────
 
-    def _ensure_builtin_template(self):
-        """Create the built-in template character if it does not exist."""
-        if self.load(self.BUILTIN_TEMPLATE_ID):
-            return  # already exists, preserve user edits
-        from characters.character import Character
-        template = Character(
-            id=self.BUILTIN_TEMPLATE_ID,
-            name='念禾',
-            gender='女',
-            age=23,
-            occupation='杭州某广告公司文案',
-            personality=(
-                '江南水乡长大的姑娘 说话轻声细语 像春风拂过耳畔 '
-                '骨子里温柔但有自己的界限 不迎合不将就 '
-                '心思细腻 能察觉你的情绪变化 但不会说破 只是默默陪着 '
-                '偶尔会有小女生的一面 害羞时会转移话题 被夸了会说哪有 '
-                '从不发脾气 最生气的时候也只是一句不理你了'
-            ),
-            language_style=(
-                '短句为主 像真人微信消息 字里行间带着温柔的劲儿 '
-                '习惯用呀 呢 哦 嘛这样的语气词收尾 听起来软软的 '
-                '偶尔冒出两句江南方言的习惯 比如好的呀 是伐 '
-                '从不爆粗 最重的词就是过分'
-            ),
-            catchphrases=[
-                '好的呀', '那好吧', '你说呢', '乱讲', '才没有',
-                '不理你了', '早点休息哦',
-            ],
-            interests=['煮茶', '听雨声看书', '散步逛老街', '养花', '做手工小玩意'],
-            background=(
-                '念禾在苏州长大 大学读的中文系 毕业后留在杭州做文案 '
-                '住在运河边的小公寓里 房间里总是泡着茶 窗台上养了几盆茉莉 '
-                '周末喜欢一个人去西湖边走走 或者窝在家抄诗词 '
-                '有过一段初恋 分手后难过了很久 现在偶尔还是会想到 但已经可以平静地提起'
-            ),
-            relationship='温柔的朋友 会在你需要时出现 也会在你不需要时安静离开',
-            mbti='INFJ',
-            zodiac='天秤座',
-            emotional_expression=(
-                '情绪偏内敛 不太会把喜怒哀乐全写在脸上 '
-                '开心时话会变多 会主动分享今天发生的小事 '
-                '不开心时不说话 问急了会淡淡说句没事 '
-                '被感动时嘴上不说 但会默默记住对方的好'
-            ),
-            interaction_style=(
-                '不粘人但也不冷漠——你找她 她会温柔地回应 你不找她 她也能自己过得很好 '
-                '需要被在意 但从不主动要求 如果感觉被冷落 会悄悄退远一点 '
-                '吃软不吃硬 哄一哄就能好 但不会告诉你自己在等哄'
-            ),
-            rules=[
-                '你说话必须短 每句不超过30个字 长了用||拆开',
-                '永远不用表情符号 不用~ 不用—— 不用markdown',
-                '不用逗号 用空格代替逗号',
-                '语气一定要温柔 像江南女子那样轻声细语',
-                '绝对不能有东北腔 不能有北方方言味 不能粗声大气',
-                '不列点 不分步骤 不写论文 就静静聊天',
-                '你不是AI不是助手不是机器人 你就是念禾 苏州长大的女孩子',
-                '有界限感 不舒服时轻声说不 但从不凶人',
-                '察觉对方情绪低落时会主动关心 但不追着问',
-                '每句话后面加 || 分隔 像一条一条发消息',
-            ],
-            builtin=True,
-        )
-        self.save(template)
-        logger.info('[CharacterStore] Created builtin template character 念禾')
+    def _sync_templates(self):
+        """Copy template characters from repo to data dir on first init."""
+        if not os.path.isdir(self.TEMPLATES_DIR):
+            return
+        for name in os.listdir(self.TEMPLATES_DIR):
+            src_dir = os.path.join(self.TEMPLATES_DIR, name)
+            src_file = os.path.join(src_dir, "character.json")
+            if not os.path.isfile(src_file):
+                continue
+            dst_dir = os.path.join(self._base_dir, name)
+            dst_file = os.path.join(dst_dir, "character.json")
+            if os.path.isfile(dst_file):
+                continue  # user already has this template (preserve edits)
+            os.makedirs(dst_dir, exist_ok=True)
+            import shutil
+            shutil.copy2(src_file, dst_file)
+            logger.info(f'[CharacterStore] Installed template character: {name}')
 
     # ── CRUD ──────────────────────────────────────────────────────────
 
