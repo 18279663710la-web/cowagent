@@ -36,6 +36,7 @@
   "agent_max_context_tokens": 50000,
   "agent_max_context_turns": 20,
   "agent_max_steps": 20,
+  "character_active": true,
   "enable_thinking": false,
   "knowledge": true
 }
