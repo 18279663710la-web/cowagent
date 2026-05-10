@@ -37,45 +37,118 @@ Windows · macOS · Linux (Ubuntu/Debian)
 
 ---
 
-## 从零开始搭建（空白 Ubuntu 环境）
+## 从零开始搭建
 
-适用场景：刚装好的 Ubuntu 虚拟机或云服务器，什么都没装。
+适用场景：刚装好的系统，什么都没装过。
 
-```bash
-# 1. 更新系统包
-sudo apt update && sudo apt upgrade -y
+### Windows
 
-# 2. 安装系统依赖
-sudo apt install -y python3 python3-pip python3-venv python3-dev git ffmpeg
+**1. 安装 Python**
 
-# 3. 克隆项目
+从 [python.org](https://www.python.org/downloads/) 下载 Python 3.12 安装包，运行安装，**勾选底部 "Add Python to PATH"**，然后点击 Install。
+
+验证：
+```powershell
+python --version
+```
+
+**2. 安装 Git**
+
+从 [git-scm.com](https://git-scm.com/download/win) 下载 Git 安装包，默认选项一路下一步。
+
+验证：
+```powershell
+git --version
+```
+
+**3. 安装 ffmpeg（可选）**
+
+```powershell
+winget install ffmpeg
+```
+
+**4. 克隆项目**
+
+```powershell
 git clone https://github.com/18279663710la-web/cowagent.git
 cd cowagent
+```
 
-# 4. 创建虚拟环境
-python3 -m venv venv
-source venv/bin/activate
+**5. 创建虚拟环境**
 
-# 5. 安装 Python 依赖
+```powershell
+python -m venv venv
+venv\Scripts\activate
+```
+
+**6. 安装依赖**
+
+```powershell
 pip install -r requirements.txt
 pip install -r requirements-optional.txt
 pip install -e .
-
-# 6. 生成配置文件
-cp config-template.json config.json
-
-# 7. 编辑 config.json，填入 DeepSeek API Key
-# nano config.json  →  找到 deepseek_api_key 填入你的 key
-
-# 8. 启动
-cow start
-
-# 9. 访问 Web 页面
-# 浏览器打开 http://<服务器IP>:9899/chat
 ```
 
-> 国内服务器遇到 GitHub 克隆慢，用镜像：`git clone https://gitee.com/zhayujie/CowAgent.git`
-> pip 安装慢加清华源：`pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
+**7. 配置并启动**
+
+```powershell
+copy config-template.json config.json
+notepad config.json          # 编辑，填入 deepseek_api_key
+cow start                    # 启动服务
+```
+
+浏览器打开 `http://localhost:9899/chat`。
+
+---
+
+### macOS
+
+**1. 安装 Homebrew**
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+**2. 安装系统依赖**
+
+```bash
+brew install python@3.12 git ffmpeg
+```
+
+**3. 克隆项目**
+
+```bash
+git clone https://github.com/18279663710la-web/cowagent.git
+cd cowagent
+```
+
+**4. 创建虚拟环境**
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+**5. 安装依赖**
+
+```bash
+pip3 install -r requirements.txt
+pip3 install -r requirements-optional.txt
+pip3 install -e .
+```
+
+**6. 配置并启动**
+
+```bash
+cp config-template.json config.json
+nano config.json             # 编辑，填入 deepseek_api_key
+cow start                    # 启动服务
+```
+
+浏览器打开 `http://localhost:9899/chat`。
+
+> GitHub 克隆慢用镜像：`git clone https://gitee.com/zhayujie/CowAgent.git`
+> pip 安装慢加清华源：`-i https://pypi.tuna.tsinghua.edu.cn/simple`
 
 ---
 
