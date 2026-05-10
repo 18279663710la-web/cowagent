@@ -338,6 +338,10 @@ class ChatChannel(Channel):
             self._send(reply, context)
             return
 
+        # Normalize punctuation — commas disrupt the natural chat flow, so
+        # replace all Chinese/English commas with a single space.
+        text = text.replace("，", " ").replace(",", " ")
+
         max_chars = conf().get("reply_segment_max_chars", 200)
         delay_min = conf().get("reply_segment_delay_min", 1.5)
         delay_max = conf().get("reply_segment_delay_max", 3.5)
