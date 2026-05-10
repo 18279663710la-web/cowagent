@@ -98,7 +98,7 @@
 
 在终端执行以下命令：
 
-**Linux / macOS：**
+**macOS：**
 ```bash
 bash <(curl -fsSL https://cdn.link-ai.tech/code/cow/run.sh)
 ```
@@ -109,6 +109,8 @@ irm https://cdn.link-ai.tech/code/cow/run.ps1 | iex
 ```
 
 脚本使用说明：[一键运行脚本](https://docs.cowagent.ai/guide/quick-start)。安装后可使用 `cow start`、`cow stop` 等 [CLI 命令](https://docs.cowagent.ai/cli/index) 管理服务。
+
+> 如需手动安装和配置，请按下面的步骤操作。
 
 
 ## 一、准备
@@ -121,38 +123,199 @@ irm https://cdn.link-ai.tech/code/cow/run.ps1 | iex
 
 同时支持使用 **LinkAI 平台** 接口，支持上述全部模型，并支持知识库、工作流、插件等 Agent 技能，参考 [接口文档](https://docs.link-ai.tech/platform/api)。
 
-### 2.环境安装
+### 2. 环境安装
 
-支持 Linux、MacOS、Windows 操作系统，可在个人计算机及服务器上运行，需安装 `Python`，Python 版本需在 3.7 ~ 3.13 之间。
+项目支持 Windows 和 macOS 操作系统，可在个人计算机上运行。需安装 Python 3.7 ~ 3.13。
 
-> 注意：Agent 模式推荐使用源码运行，若选择 Docker 部署则无需安装 python 环境和下载源码，可直接快进到下一节。
+> 注意：Agent 模式推荐使用源码运行，若选择 Docker 部署则无需安装 python 环境和下载源码，可直接快进到 [Docker 部署](#3docker部署) 一节。
 
-**(1) 克隆项目代码：**
+#### 系统依赖一览
 
-```bash
-git clone https://github.com/zhayujie/CowAgent
-cd CowAgent/
+| 依赖 | 用途 | 必需 |
+|------|------|------|
+| Python 3.7 ~ 3.13 | 运行环境 | 是 |
+| Git | 克隆项目 | 是 |
+| ffmpeg | 语音消息处理 (pydub) | 否，建议安装 |
+| Docker + Docker Compose | 容器化部署 | 否，可选 |
+| Playwright + Chromium | 浏览器工具 (网页操作) | 否，可选 |
+
+---
+
+#### Windows 安装
+
+**(0) 安装 Python**
+
+1. 从 [python.org](https://www.python.org/downloads/) 下载 Python 安装包（推荐 3.11 或 3.12）
+2. 运行安装程序，**勾选 "Add Python to PATH"**，然后点击 Install
+3. 打开 **PowerShell**，验证安装：
+
+```powershell
+python --version
+pip --version
 ```
 
-若遇到网络问题可使用国内仓库地址：https://gitee.com/zhayujie/CowAgent
+**(1) 安装 Git**
 
-**(2) 安装核心依赖 (必选)：**
+从 [git-scm.com](https://git-scm.com/download/win) 下载 Git 安装包，运行安装程序，使用默认选项即可。验证安装：
+
+```powershell
+git --version
+```
+
+**(2) 安装 ffmpeg（可选，语音功能需要）**
+
+方式一（winget，推荐）：
+```powershell
+winget install ffmpeg
+```
+
+方式二（scoop）：
+```powershell
+scoop install ffmpeg
+```
+
+方式三（手动）：从 [ffmpeg.org](https://ffmpeg.org/download.html) 下载 Windows 版本，解压后将 `bin/` 目录添加到系统 PATH 环境变量。
+
+验证安装：
+```powershell
+ffmpeg -version
+```
+
+**(3) 克隆项目代码：**
+
+```powershell
+git clone https://github.com/18279663710la-web/cowagent.git
+cd cowagent
+```
+
+若遇到网络问题可使用国内仓库地址：`https://gitee.com/zhayujie/CowAgent`
+
+**(4) 创建虚拟环境（推荐）：**
+
+```powershell
+python -m venv venv
+venv\Scripts\activate
+```
+
+**(5) 安装核心依赖（必选）：**
+
+```powershell
+pip install -r requirements.txt
+```
+
+**(6) 安装拓展依赖（可选，建议安装）：**
+
+```powershell
+pip install -r requirements-optional.txt
+```
+
+> 国内网络可使用镜像源加速：`pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
+> 如果某项依赖安装失败可注释掉对应的行后重试。
+
+**(7) 安装 Cow CLI（推荐）：**
+
+```powershell
+pip install -e .
+```
+
+安装后可使用 `cow` 命令管理服务（启动、停止、更新等）和技能，详见 [命令文档](https://docs.cowagent.ai/cli/index)。
+
+**(8) 安装浏览器工具（可选）：**
+
+如果需要 Agent 操作浏览器（如访问网页、填写表单等），需要额外安装浏览器依赖：
+
+```powershell
+cow install-browser
+```
+
+该命令会自动安装 `playwright` 和 Chromium 浏览器，国内网络自动使用镜像加速。详见 [浏览器工具文档](https://docs.cowagent.ai/tools/browser)。
+
+---
+
+#### macOS 安装
+
+**(0) 安装 Homebrew（如未安装）**
+
+Homebrew 是 macOS 的包管理器，用于安装各类系统依赖。
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+安装完成后按提示将 Homebrew 添加到 PATH。
+
+**(1) 安装 Python**
+
+```bash
+brew install python@3.12
+```
+
+验证安装：
+
+```bash
+python3 --version
+pip3 --version
+```
+
+**(2) 安装 Git**
+
+macOS 通常已自带 Git。如未安装：
+
+```bash
+brew install git
+```
+
+验证安装：
+
+```bash
+git --version
+```
+
+**(3) 安装 ffmpeg（可选，语音功能需要）**
+
+```bash
+brew install ffmpeg
+```
+
+验证安装：
+
+```bash
+ffmpeg -version
+```
+
+**(4) 克隆项目代码：**
+
+```bash
+git clone https://github.com/18279663710la-web/cowagent.git
+cd cowagent
+```
+
+若遇到网络问题可使用国内仓库地址：`https://gitee.com/zhayujie/CowAgent`
+
+**(5) 创建虚拟环境（推荐）：**
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+**(6) 安装核心依赖（必选）：**
 
 ```bash
 pip3 install -r requirements.txt
 ```
 
-**(3) 拓展依赖 (可选，建议安装)：**
+**(7) 安装拓展依赖（可选，建议安装）：**
 
 ```bash
 pip3 install -r requirements-optional.txt
 ```
 
 > 国内网络可使用镜像源加速：`pip3 install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
+> 如果某项依赖安装失败可注释掉对应的行后重试。
+> macOS 上 `legacy-cgi` 包如果安装失败可以忽略，该包仅为 Python 3.13+ 的 Windows 兼容需求。
 
-如果某项依赖安装失败可注释掉对应的行后重试。
-
-**(4) 安装 Cow CLI (推荐)：**
+**(8) 安装 Cow CLI（推荐）：**
 
 ```bash
 pip3 install -e .
@@ -160,7 +323,7 @@ pip3 install -e .
 
 安装后可使用 `cow` 命令管理服务（启动、停止、更新等）和技能，详见 [命令文档](https://docs.cowagent.ai/cli/index)。
 
-**(5) 安装浏览器工具 (可选)：**
+**(9) 安装浏览器工具（可选）：**
 
 如果需要 Agent 操作浏览器（如访问网页、填写表单等），需要额外安装浏览器依赖：
 

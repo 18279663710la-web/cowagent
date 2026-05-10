@@ -7,7 +7,7 @@ MCP SDK dependency.
 
 import json
 import os
-import select
+import queue
 import subprocess
 import threading
 import urllib.request
@@ -32,6 +32,7 @@ class McpClient:
 
         # stdio state
         self._proc: Optional[subprocess.Popen] = None
+        self._stdout_queue: Optional[queue.Queue] = None
 
         # SSE state
         self._sse_url: Optional[str] = None
@@ -136,8 +137,14 @@ class McpClient:
         )
         logger.debug(f"[MCP:{self.name}] stdio process started (pid={self._proc.pid})")
 
+        self._stdout_queue = queue.Queue()
+
         threading.Thread(
             target=self._drain_stderr, daemon=True, name=f"mcp-stderr-{self.name}"
+        ).start()
+
+        threading.Thread(
+            target=self._drain_stdout, daemon=True, name=f"mcp-stdout-{self.name}"
         ).start()
 
         return self._handshake()
@@ -148,12 +155,23 @@ class McpClient:
             if line:
                 logger.debug(f"[MCP:{self.name}] stderr: {line}")
 
+    def _drain_stdout(self):
+        """Read lines from stdout into a thread-safe queue for consumption."""
+        try:
+            for line in self._proc.stdout:
+                self._stdout_queue.put(line)
+        except Exception:
+            pass
+        finally:
+            # Signal EOF to any waiting consumers
+            self._stdout_queue.put(None)
+
     def _readline_with_timeout(self, timeout: int = 30) -> str:
-        """Read one line from stdio stdout with a hard timeout."""
-        ready, _, _ = select.select([self._proc.stdout], [], [], timeout)
-        if not ready:
-            raise TimeoutError(f"[MCP:{self.name}] stdio read timed out after {timeout}s")
-        return self._proc.stdout.readline()
+        """Read one line from stdout with timeout (cross-platform)."""
+        line = self._stdout_queue.get(timeout=timeout)
+        if line is None:
+            raise IOError(f"[MCP:{self.name}] stdio process closed unexpectedly")
+        return line
 
     def _stdio_send(self, message: dict) -> dict:
         """Send a JSON-RPC message over stdio and read the response."""
