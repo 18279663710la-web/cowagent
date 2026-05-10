@@ -48,9 +48,3 @@ build/
 .cow.pid
 .claude/
 
-# installer build artifacts
-scripts/installer/dist/
-scripts/installer/payload/python/
-scripts/installer/payload/ffmpeg/
-scripts/installer/payload/wheels/
-scripts/installer/payload/cowagent/

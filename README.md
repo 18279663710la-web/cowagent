@@ -122,64 +122,6 @@ cow status         # 状态
 cow logs           # 日志
 ```
 
----
-
-## 桌面安装器
-
-将项目打包成一个独立安装程序（.exe / .app），用户双击即可安装，无需手动配置任何环境。
-
-### 构建
-
-```bash
-pip install pyinstaller
-
-# Windows 版
-python scripts/installer/build.py --platform windows
-
-# macOS 版（需在 Mac 上运行）
-python scripts/installer/build.py --platform macos
-```
-
-构建完成后在 `scripts/installer/dist/` 目录下：
-- Windows: `CowAgent-Installer.exe`（~460 MB）
-- macOS: `CowAgent-Installer.app`
-
-### 安装包使用说明
-
-1. 双击 `CowAgent-Installer.exe`（Windows）或 `.app`（macOS）
-2. 选择安装路径（默认 `C:\Program Files\CowAgent`）
-3. 点击「安装」，等待进度条完成
-4. 点击「启动 CowAgent」，浏览器自动打开配置页面
-5. 在网页中填入 API Key 即可开始使用
-
-以后每次使用只需双击桌面上的 CowAgent 快捷方式。
-
-### 安装目录结构
-
-```
-安装目录/
-├── python/              # 自带 Python，不影响系统环境
-├── cowagent/            # 项目文件
-├── tools/ffmpeg/        # ffmpeg
-├── scripts/
-│   ├── start.bat        # 启动
-│   └── uninstall.bat    # 卸载
-└── workspace/           # 运行时数据
-```
-
-### 卸载
-
-运行安装目录下的 `uninstall.bat`（Windows）或 `uninstall.command`（macOS），或直接删除安装目录加桌面快捷方式。不写注册表，不影响系统环境。
-
-### 测试
-
-```bash
-pytest scripts/installer/tests/ -v               # 安装器单元测试
-python scripts/installer/installer_gui.py        # 开发模式直接打开 GUI
-```
-
----
-
 ## 项目结构
 
 ```
@@ -197,12 +139,5 @@ cowagent/
 ├── tests/                   # 项目测试
 └── scripts/
     ├── setup.ps1            # Windows 一键环境安装
-    ├── setup.sh             # macOS/Linux 一键环境安装
-    └── installer/           # 桌面安装器
-        ├── installer_gui.py #   安装器 GUI
-        ├── install_engine.py#   安装引擎
-        ├── build.py         #   构建脚本
-        ├── installer.spec   #   PyInstaller 配置
-        ├── payload/         #   载荷模板
-        └── tests/           #   测试
+    └── setup.sh             # macOS/Linux 一键环境安装
 ```
