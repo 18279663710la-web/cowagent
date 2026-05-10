@@ -24,7 +24,7 @@ class CharacterStore:
             bindings.json            # user_id -> active_character_id mapping
     """
 
-    DEFAULT_BASE = "~/cow/characters"
+    DEFAULT_BASE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "characters")
 
     BUILTIN_TEMPLATE_ID = "builtin_template"
 
