@@ -19,19 +19,17 @@
 
 ### Windows
 
-**方式一：一键安装**
+**方式一：一键安装（推荐）**
 
-以管理员身份打开 PowerShell：
+以管理员身份打开 PowerShell，执行：
 
 ```powershell
-# 先下载脚本（或直接 clone 后在项目目录中运行）
-cd cowagent
-.\scripts\setup.ps1
+irm https://raw.githubusercontent.com/18279663710la-web/cowagent/master/scripts/setup.ps1 | iex
 ```
 
-脚本会自动安装缺失的系统依赖（Python、Git、ffmpeg），创建虚拟环境，安装 pip 包和 cow CLI。
+脚本自动安装 Python、Git、ffmpeg，克隆项目，创建虚拟环境，安装全部依赖。
 
-可选参数：`-SkipSystem`（跳过系统依赖安装）、`-WithBrowser`（附带浏览器工具）。
+可选参数：`-SkipSystem`（跳过系统依赖）、`-WithBrowser`（附带浏览器工具）。
 
 **方式二：手动安装**
 
@@ -61,14 +59,13 @@ pip install -e .
 
 ### macOS
 
-**方式一：一键安装**
+**方式一：一键安装（推荐）**
 
 ```bash
-cd cowagent
-bash scripts/setup.sh
+bash <(curl -fsSL https://raw.githubusercontent.com/18279663710la-web/cowagent/master/scripts/setup.sh)
 ```
 
-脚本会自动安装 Homebrew（如未安装）、Python、Git、ffmpeg，创建虚拟环境，安装 pip 包和 cow CLI。
+脚本自动安装 Homebrew、Python、Git、ffmpeg，克隆项目，创建虚拟环境，安装全部依赖。
 
 可选参数：`--skip-system`、`--with-browser`、`--dev`。
 
