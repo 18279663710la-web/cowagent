@@ -381,6 +381,7 @@ def _init_character_system():
         store = CharacterStore()
         char_mgr = CharacterManager(store)
         proactive_svc = ProactiveService(character_manager=char_mgr)
+        proactive_svc.start()  # background polling for inactivity/emotion triggers
 
         # Wire proactive service to character manager
         char_mgr._proactive_service = proactive_svc

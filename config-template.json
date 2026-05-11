@@ -42,6 +42,7 @@
   "memory_auto_inject_count": 3,
   "memory_auto_index": true,
   "character_active": true,
+  "proactive_messaging": false,
   "enable_thinking": false,
   "knowledge": true
 }

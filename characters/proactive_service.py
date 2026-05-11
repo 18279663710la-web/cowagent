@@ -30,11 +30,34 @@ class ProactiveService:
     EMOTION_CHECK_WINDOW_HOURS = 2
     EMOTION_LOW_THRESHOLD = -0.3  # sentiment score below this = "low mood"
 
+    # Check interval for the background loop (seconds)
+    CHECK_INTERVAL_SECONDS = 300  # every 5 minutes
+
     def __init__(self, character_manager=None, agent_bridge=None):
         self._character_manager = character_manager
         self._agent_bridge = agent_bridge
         self._last_activity: dict[str, datetime.datetime] = {}  # user_id -> timestamp
+        self._last_proactive: dict[str, datetime.datetime] = {}  # user_id -> last sent
         self._lock = threading.Lock()
+        self._loop_started = False
+        self._enabled = False
+
+    def start(self):
+        """Start the background check loop."""
+        from config import conf
+        if not conf().get("proactive_messaging", False):
+            logger.info("[ProactiveService] Disabled (proactive_messaging=false)")
+            return
+        if self._loop_started:
+            return
+        self._loop_started = True
+        self._enabled = True
+        t = threading.Thread(target=self._check_loop, daemon=True, name="proactive-loop")
+        t.start()
+        logger.info(
+            f"[ProactiveService] Started (inactivity={self.INACTIVITY_THRESHOLD_HOURS}h, "
+            f"check_interval={self.CHECK_INTERVAL_SECONDS}s)"
+        )
 
     def set_character_manager(self, cm):
         self._character_manager = cm
@@ -52,6 +75,111 @@ class ProactiveService:
     def get_last_activity(self, user_id: str) -> Optional[datetime.datetime]:
         with self._lock:
             return self._last_activity.get(user_id)
+
+    # ── background check loop ─────────────────────────────────────────
+
+    def _check_loop(self):
+        """Background daemon: periodically check all active characters."""
+        import time as _time
+        while self._enabled:
+            try:
+                _time.sleep(self.CHECK_INTERVAL_SECONDS)
+                self._run_checks()
+            except Exception as e:
+                logger.warning(f"[ProactiveService] Check loop error: {e}")
+
+    def _run_checks(self):
+        """Check all active characters for triggers."""
+        if not self._character_manager or not self._agent_bridge:
+            return
+        chars = self._character_manager.list_characters()
+        for char in chars:
+            if not char.is_active or not char.bound_user_id:
+                continue
+            uid = char.bound_user_id
+            try:
+                self._check_for_user(uid, char)
+            except Exception as e:
+                logger.debug(f"[ProactiveService] Check failed for {uid}: {e}")
+
+    def _check_for_user(self, user_id: str, character: Character):
+        """Check a single user+character pair for triggers."""
+        # Throttle: don't send more than one proactive message per 3 hours
+        with self._lock:
+            last_sent = self._last_proactive.get(user_id)
+        if last_sent:
+            hours_since = (datetime.datetime.now() - last_sent).total_seconds() / 3600
+            if hours_since < 3:
+                return
+
+        # Inactivity trigger
+        if self.should_send_inactivity_message(user_id):
+            msg = self.generate_proactive_message(character, "inactivity")
+            if msg:
+                self._dispatch(character, msg)
+                with self._lock:
+                    self._last_proactive[user_id] = datetime.datetime.now()
+                return
+
+        # Emotion trigger — check recent agent messages
+        agent_key = self._character_agent_key(user_id, character.id)
+        ab = self._get_agent_bridge()
+        agent = None
+        if ab:
+            try:
+                agent = ab.agents.get(agent_key)
+            except Exception:
+                pass
+
+        if agent:
+            with agent.messages_lock:
+                recent = list(agent.messages[-10:])
+            triggered, emotion = self.check_emotion_trigger(recent)
+            if triggered:
+                msg = self.generate_proactive_message(
+                    character, "emotion_low", {"emotion": emotion}
+                )
+                if msg:
+                    self._dispatch(character, msg)
+                    with self._lock:
+                        self._last_proactive[user_id] = datetime.datetime.now()
+
+    def _dispatch(self, character: Character, message: str):
+        """Send a proactive message to the character's bound user."""
+        from bridge.reply import Reply, ReplyType
+        from bridge.context import Context, ContextType
+        try:
+            context = Context(
+                type=ContextType.TEXT,
+                content=message,
+                session_id=character.bound_user_id,
+                receiver=character.bound_user_id,
+                isgroup=False,
+            )
+            context["channel_type"] = "weixin"
+            context["msg"] = None
+
+            from channel.chat_channel import ChatChannel
+            reply = Reply(ReplyType.TEXT, message)
+            # Find active channel instance to send the reply
+            from app import _channel_mgr
+            if _channel_mgr:
+                for name, ch in _channel_mgr._channels.items():
+                    try:
+                        ch.send(reply, context)
+                        logger.info(
+                            f"[ProactiveService] Sent to {character.bound_user_id}: "
+                            f"{message[:60]}..."
+                        )
+                        break
+                    except Exception:
+                        continue
+        except Exception as e:
+            logger.warning(f"[ProactiveService] Dispatch failed: {e}")
+
+    @staticmethod
+    def _character_agent_key(user_id: str, character_id: str) -> str:
+        return f"{user_id}:{character_id}"
 
     # ── trigger checks ────────────────────────────────────────────────
 
@@ -115,6 +243,17 @@ class ProactiveService:
 
     # ── message generation ────────────────────────────────────────────
 
+    def _get_agent_bridge(self):
+        """Lazily resolve the AgentBridge singleton."""
+        if self._agent_bridge:
+            return self._agent_bridge
+        try:
+            from bridge.bridge import Bridge
+            self._agent_bridge = Bridge().get_agent_bridge()
+        except Exception:
+            pass
+        return self._agent_bridge
+
     def generate_proactive_message(
         self, character: Character, trigger_type: str, context: dict = None
     ) -> Optional[str]:
@@ -124,7 +263,8 @@ class ProactiveService:
         trigger_type: "inactivity", "emotion_low", "morning", "night", "event"
         context: optional dict with additional info (emotion, topic, etc.)
         """
-        if not self._agent_bridge or not character.bound_user_id:
+        bridge = self._get_agent_bridge()
+        if not bridge or not character.bound_user_id:
             return None
 
         context = context or {}
@@ -142,7 +282,7 @@ class ProactiveService:
 
         try:
             user_id = character.bound_user_id
-            reply = self._agent_bridge.agent_reply(
+            reply = bridge.agent_reply(
                 query=f"[系统指令 - 主动消息触发 - {trigger_type}]\n{prompt}",
                 context=self._make_context(user_id),
             )
