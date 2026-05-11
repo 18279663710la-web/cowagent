@@ -40,6 +40,16 @@ def detect_format(file_path: str) -> str:
         # WeChatMsg format: "2024-01-15 20:30:45 张三"
         if re.search(r'\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}', first_lines):
             return 'wechatmsg_txt'
+        # Merged chat log: "聊天记录合集" with per-message timestamps.
+        # Check BEFORE native format — merged files may contain native-format
+        # sections later in the file that would otherwise take priority.
+        if '聊天记录合集' in first_lines or re.search(
+            r'【聊天记录\d+[：:]', first_lines
+        ):
+            return 'wechat_timestamp_txt'
+        # Message format: "HH:MM sender：content" — also timestamp-based
+        if re.search(r'\d{2}:\d{2}\s+\S+[：:(]', first_lines):
+            return 'wechat_timestamp_txt'
         # Native WeChat export: "[聊天对象：xxx]" or "[早上/上午 HH:MM]"
         if re.search(r'聊天对象[：:]', first_lines) or re.search(
             r'\[(早上|上午|中午|下午|傍晚|晚上|凌晨)\s*\d{1,2}:\d{2}\]', first_lines
@@ -161,6 +171,66 @@ def parse_wechatmsg_html(file_path: str, target_name: str) -> dict:
         })
 
     return analyze_messages(messages, target_name)
+
+
+def parse_wechat_timestamp_txt(file_path: str, target_name: str) -> dict:
+    """Parse TXT with per-message timestamps and sender labels.
+
+    Formats handled:
+        HH:MM sender：message
+        HH:MM sender(message)
+
+    Also handles merged chat-log headers:
+        ====================
+        聊天记录合集
+        ====================
+        【聊天记录N：PersonA 与 PersonB】
+        时间：YYYY年M月D日
+    """
+    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+        content = f.read()
+
+    # Detect session header to extract the real target name
+    header_m = re.search(
+        r'【聊天记录\d+[：:]\s*(\S+)\s+[与和]\s*(\S+)[】\]]',
+        content[:500],
+    )
+    effective_target = target_name
+    if header_m:
+        # Choose the one that matches the user-provided target, or use the first
+        a, b = header_m.group(1), header_m.group(2)
+        effective_target = a if target_name in a else b if target_name in b else a
+
+    # Per-message pattern: "HH:MM sender：content" or "HH:MM sender(content)"
+    msg_pattern = re.compile(
+        r'^(\d{2}:\d{2})\s+(\S+?)[：:(](.+?)(?:\))?$',
+        re.MULTILINE,
+    )
+
+    messages = []
+    for m in msg_pattern.finditer(content):
+        time_str = m.group(1)
+        sender = m.group(2)
+        text = m.group(3).strip()
+        if not text:
+            continue
+        messages.append({
+            'timestamp': time_str,
+            'sender': sender,
+            'content': text,
+        })
+
+    if not messages:
+        # Fallback: just take all non-header lines as raw text
+        return {
+            'raw_text': content,
+            'target_name': effective_target,
+            'format': 'wechat_timestamp_txt',
+            'message_count': 0,
+            'analysis': {'note': '未能解析出结构化消息，请检查文件格式或使用纯文本模式'},
+        }
+
+    return analyze_messages(messages, effective_target)
 
 
 def parse_wechat_native_txt(file_path: str, target_name: str) -> dict:
@@ -320,6 +390,7 @@ def main():
     parsers = {
         'wechatmsg_txt': parse_wechatmsg_txt,
         'wechat_native_txt': parse_wechat_native_txt,
+        'wechat_timestamp_txt': parse_wechat_timestamp_txt,
         'wechatmsg_html': parse_wechatmsg_html,
         'liuhen': parse_liuhen_json,
         'plaintext': parse_plaintext,
