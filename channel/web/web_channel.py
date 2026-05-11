@@ -2572,6 +2572,7 @@ class ExCreateHandler:
             if not cm:
                 return json.dumps({"status": "error", "message": "Character system not enabled"})
             body = json.loads(web.data())
+            char_id = body.get("char_id", "").strip()
             name = body.get("name", "前任").strip() or "前任"
             persona_text = body.get("persona", "")
             memory_text = body.get("memory", "")
@@ -2599,15 +2600,22 @@ class ExCreateHandler:
                 "ex_skill": True,
             }
 
-            char = cm.create_character(char_data)
+            if char_id:
+                char = cm.update_character(char_id, char_data)
+                if not char:
+                    return json.dumps({"status": "error", "message": "Character not found"})
+            else:
+                char = cm.create_character(char_data)
 
             # Write memory file to character workspace
             if memory_text and hasattr(cm, "store"):
                 char_ws = cm.store.get_character_workspace(char.id)
                 if char_ws:
+                    os.makedirs(char_ws, exist_ok=True)
                     memory_file = os.path.join(char_ws, "MEMORY.md")
                     with open(memory_file, "w", encoding="utf-8") as f:
                         f.write(memory_text)
+                    logger.info(f"[ExEditor] Wrote MEMORY.md for char={char.id}")
 
             return json.dumps({"status": "success", "character": char.to_dict()}, ensure_ascii=False)
         except Exception as e:

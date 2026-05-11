@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import json
+import random
 import re
 import os
 import sys
@@ -365,7 +366,10 @@ def analyze_messages(messages: list, target_name: str) -> dict:
             'punctuation_habits': punctuation_counts,
             'message_style': 'short_burst' if avg_length < 20 else 'long_form',
         },
-        'sample_messages': [m['content'] for m in target_msgs[:50] if m.get('content')],
+        'sample_messages': random.sample(
+            [m['content'] for m in target_msgs if m.get('content')],
+            min(50, len([m for m in target_msgs if m.get('content')])),
+        ) if target_msgs else [],
     }
 
 
@@ -434,7 +438,7 @@ def main():
         f.write(f"- 风格：{'短句连发型' if analysis.get('message_style') == 'short_burst' else '长段落型'}\n\n")
         
         if result.get('sample_messages'):
-            f.write("## 消息样本（前50条）\n")
+            f.write("## 消息样本（随机50条）\n")
             for i, msg in enumerate(result['sample_messages'], 1):
                 f.write(f"{i}. {msg}\n")
     

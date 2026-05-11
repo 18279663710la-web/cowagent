@@ -50,3 +50,6 @@ build/
 
 # user data (characters, etc.)
 data/
+.deps_installed
+
+.deps_installed

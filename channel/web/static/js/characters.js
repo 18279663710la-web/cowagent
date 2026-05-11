@@ -511,14 +511,13 @@ async function exCreateCharacter() {
             persona: persona,
             memory: memory,
             target: document.getElementById('ex-target').value.trim(),
+            char_id: charId || '',  // empty = create new, non-empty = update existing
         };
 
-        // Update existing or create new
-        var url = charId ? '/api/characters/' + charId : '/api/ex/create';
-        var method = charId ? 'PUT' : 'POST';
-
-        var resp = await fetch(url, {
-            method: method,
+        // Always use /api/ex/create — it handles both create and update
+        // and writes MEMORY.md which the regular character PUT does not.
+        var resp = await fetch('/api/ex/create', {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
         });
