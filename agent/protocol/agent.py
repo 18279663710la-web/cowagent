@@ -98,7 +98,7 @@ class Agent:
             logger.warning(f"Failed to build skills prompt: {e}")
             return ""
     
-    def get_full_system_prompt(self, skill_filter=None) -> str:
+    def get_full_system_prompt(self, skill_filter=None, retrieved_memories=None) -> str:
         """
         Build the complete system prompt from scratch every time.
 
@@ -121,6 +121,7 @@ class Agent:
                 skill_manager=self.skill_manager,
                 memory_manager=self.memory_manager,
                 runtime_info=self.runtime_info,
+                retrieved_memories=retrieved_memories,
             )
         except Exception as e:
             logger.warning(f"Failed to rebuild system prompt, using cached version: {e}")
@@ -398,12 +399,36 @@ class Agent:
             with self.messages_lock:
                 self.messages = []
 
+        # Retrieve relevant long-term memories via hybrid search and inject
+        # them into the system prompt so the agent sees them without having
+        # to call the memory_search tool explicitly.
+        injected_memories = None
+        if self.memory_manager and conf().get("memory_auto_inject", True):
+            try:
+                results = self.memory_manager.search_sync(
+                    query=user_message,
+                    max_results=3,
+                    min_score=0.3,
+                )
+                if results:
+                    parts = ["## 🧠 相关记忆", ""]
+                    for r in results:
+                        snippet = r.snippet[:400].replace("\n", " ")
+                        parts.append(f"- {snippet}")
+                    parts.append("")
+                    injected_memories = "\n".join(parts)
+            except Exception as e:
+                logger.warning(f"Memory search failed for context injection: {e}")
+
         # Get model to use
         if not self.model:
             raise ValueError("No model available for agent")
 
-        # Get full system prompt with skills
-        full_system_prompt = self.get_full_system_prompt(skill_filter=skill_filter)
+        # Get full system prompt with skills and dynamic memories
+        full_system_prompt = self.get_full_system_prompt(
+            skill_filter=skill_filter,
+            retrieved_memories=injected_memories,
+        )
 
         # Create a copy of messages for this execution to avoid concurrent modification
         # Record the original length to track which messages are new

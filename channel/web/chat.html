@@ -1044,6 +1044,180 @@
         </div><!-- /main-content -->
     </div><!-- /app -->
 
+    <!-- Ex (前任) Character Editor Overlay -->
+    <div id="ex-editor-overlay" class="fixed inset-0 bg-black/50 z-[110] hidden flex items-center justify-center">
+        <div class="bg-white dark:bg-[#1A1A1A] rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl
+                    w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">
+                        <i class="fas fa-heart-broken mr-2 text-rose-400"></i>编辑前任角色
+                    </h3>
+                    <button onclick="hideExEditor()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+                        <i class="fas fa-times text-lg"></i>
+                    </button>
+                </div>
+
+                <!-- Step indicator -->
+                <div id="ex-steps" class="flex items-center gap-2 mb-6 text-xs">
+                    <span class="step-dot w-6 h-6 rounded-full bg-primary-500 text-white flex items-center justify-center font-bold">1</span>
+                    <span class="text-slate-400">—</span>
+                    <span class="step-dot w-6 h-6 rounded-full bg-slate-200 dark:bg-white/10 text-slate-500 flex items-center justify-center">2</span>
+                    <span class="text-slate-400">—</span>
+                    <span class="step-dot w-6 h-6 rounded-full bg-slate-200 dark:bg-white/10 text-slate-500 flex items-center justify-center">3</span>
+                    <span class="text-slate-400">—</span>
+                    <span class="step-dot w-6 h-6 rounded-full bg-slate-200 dark:bg-white/10 text-slate-500 flex items-center justify-center">4</span>
+                </div>
+
+                <!-- Step 1: Basic Info -->
+                <div id="ex-step1" class="ex-step">
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">填写基本信息</p>
+                    <input type="hidden" id="ex-char-id" value="">
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">角色名 *</label>
+                            <input id="ex-name" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                          bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                          focus:outline-none focus:ring-2 focus:ring-primary-400/50" placeholder="TA的名字">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">解析昵称（聊天记录中的名字）</label>
+                            <input id="ex-target" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                          bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                          focus:outline-none focus:ring-2 focus:ring-primary-400/50" placeholder="TA在聊天记录中的昵称">
+                        </div>
+                    </div>
+                    <div class="flex justify-end">
+                        <button onclick="exNextStep(2)" class="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm rounded-xl cursor-pointer">
+                            下一步 <i class="fas fa-arrow-right ml-1"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Select data source & upload -->
+                <div id="ex-step2" class="ex-step hidden">
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">选择数据来源并导入</p>
+
+                    <!-- Format selector -->
+                    <div class="grid grid-cols-2 gap-3 mb-4" id="ex-source-grid">
+                        <button onclick="exSelectSource('html')" data-source="html"
+                                class="ex-source-btn p-3 rounded-xl border-2 border-primary-400 bg-primary-50 dark:bg-primary-900/10
+                                       text-left hover:border-primary-500 transition-colors cursor-pointer">
+                            <i class="fas fa-file-code text-orange-500 text-lg mb-1 block"></i>
+                            <span class="text-sm font-medium text-slate-800 dark:text-slate-200">HTML 格式</span>
+                        </button>
+                        <button onclick="exSelectSource('txt')" data-source="txt"
+                                class="ex-source-btn p-3 rounded-xl border-2 border-slate-200 dark:border-white/10
+                                       text-left hover:border-primary-400 transition-colors cursor-pointer">
+                            <i class="fas fa-file-alt text-blue-500 text-lg mb-1 block"></i>
+                            <span class="text-sm font-medium text-slate-800 dark:text-slate-200">TXT 格式</span>
+                        </button>
+                        <button onclick="exSelectSource('json')" data-source="json"
+                                class="ex-source-btn p-3 rounded-xl border-2 border-slate-200 dark:border-white/10
+                                       text-left hover:border-primary-400 transition-colors cursor-pointer">
+                            <i class="fas fa-code text-green-500 text-lg mb-1 block"></i>
+                            <span class="text-sm font-medium text-slate-800 dark:text-slate-200">JSON 格式</span>
+                        </button>
+                        <button onclick="exSelectSource('text')" data-source="text"
+                                class="ex-source-btn p-3 rounded-xl border-2 border-slate-200 dark:border-white/10
+                                       text-left hover:border-primary-400 transition-colors cursor-pointer">
+                            <i class="fas fa-pen text-purple-500 text-lg mb-1 block"></i>
+                            <span class="text-sm font-medium text-slate-800 dark:text-slate-200">纯文本粘贴</span>
+                        </button>
+                    </div>
+
+                    <!-- Text input area (for text source) -->
+                    <div id="ex-text-input" class="hidden mb-4">
+                        <textarea id="ex-text-content" rows="6" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                   bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                   focus:outline-none focus:ring-2 focus:ring-primary-400/50"
+                                  placeholder="写下关于TA的记忆：TA的性格、你们的经历、印象深刻的对话..."></textarea>
+                    </div>
+
+                    <!-- File upload area -->
+                    <div id="ex-file-area" class="border-2 border-dashed border-slate-300 dark:border-white/10 rounded-xl p-8 text-center mb-4"
+                         id="ex-drop-zone">
+                        <i class="fas fa-cloud-upload-alt text-3xl text-slate-300 dark:text-slate-600 mb-3 block"></i>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">拖拽文件到此处 或 点击选择</p>
+                        <input type="file" id="ex-file-input" accept=".html,.htm,.txt,.json,.csv,.mht,.mhtml"
+                               class="hidden" onchange="exFileSelected(this)" multiple>
+                        <button onclick="document.getElementById('ex-file-input').click()"
+                                class="px-4 py-2 bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300 text-sm rounded-xl
+                                       hover:bg-slate-200 dark:hover:bg-white/10 cursor-pointer transition-colors">
+                            选择文件
+                        </button>
+                        <p id="ex-file-name" class="text-xs text-slate-400 mt-2"></p>
+                    </div>
+
+                    <div id="ex-upload-status" class="hidden mb-4 p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-sm text-blue-700 dark:text-blue-400">
+                        <i class="fas fa-spinner fa-pulse mr-2"></i><span></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <button onclick="exNextStep(1)" class="px-4 py-2 border border-slate-200 dark:border-white/10 text-sm
+                                       text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer">
+                            <i class="fas fa-arrow-left mr-1"></i>上一步
+                        </button>
+                        <button id="ex-btn-parse" onclick="exParseFile()"
+                                class="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm rounded-xl cursor-pointer disabled:opacity-50" disabled>
+                            开始分析 <i class="fas fa-microscope ml-1"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 3: Parse Results -->
+                <div id="ex-step3" class="ex-step hidden">
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">解析结果预览</p>
+                    <div id="ex-parse-output" class="bg-slate-50 dark:bg-[#111] rounded-xl p-4 max-h-64 overflow-y-auto mb-4">
+                        <pre class="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-wrap font-mono"></pre>
+                    </div>
+                    <div class="flex justify-between">
+                        <button onclick="exNextStep(2)" class="px-4 py-2 border border-slate-200 dark:border-white/10 text-sm
+                                       text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer">
+                            <i class="fas fa-arrow-left mr-1"></i>上一步
+                        </button>
+                        <button id="ex-btn-analyze" onclick="exAnalyze()"
+                                class="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm rounded-xl cursor-pointer">
+                            LLM分析 <i class="fas fa-brain ml-1"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 4: Preview & Create -->
+                <div id="ex-step4" class="ex-step hidden">
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">AI 生成的人设和记忆预览，可手动修改后创建</p>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">人设 (Persona)</label>
+                        <textarea id="ex-persona" rows="4" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                   bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                   focus:outline-none focus:ring-2 focus:ring-primary-400/50"></textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">共同记忆 (Memory)</label>
+                        <textarea id="ex-memory" rows="4" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10
+                                   bg-white dark:bg-[#222] text-slate-800 dark:text-slate-200 text-sm
+                                   focus:outline-none focus:ring-2 focus:ring-primary-400/50"></textarea>
+                    </div>
+                    <div class="flex justify-between">
+                        <button onclick="exNextStep(3)" class="px-4 py-2 border border-slate-200 dark:border-white/10 text-sm
+                                       text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer">
+                            <i class="fas fa-arrow-left mr-1"></i>上一步
+                        </button>
+                        <button id="ex-btn-create" onclick="exCreateCharacter()"
+                                class="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm rounded-xl cursor-pointer">
+                            <i class="fas fa-check mr-1"></i>创建角色
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Loading overlay -->
+                <div id="ex-loading" class="hidden text-center py-8">
+                    <i class="fas fa-spinner fa-pulse text-3xl text-primary-500 mb-3 block"></i>
+                    <p id="ex-loading-msg" class="text-sm text-slate-500">处理中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Confirm Dialog -->
     <div id="confirm-dialog-overlay" class="fixed inset-0 bg-black/50 z-[100] hidden flex items-center justify-center">
         <div class="bg-white dark:bg-[#1A1A1A] rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl

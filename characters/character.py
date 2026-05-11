@@ -35,6 +35,7 @@ class Character:
     is_active: bool = False
     bound_user_id: str = ""
     builtin: bool = False  # builtin template — cannot be deleted via web API
+    ex_skill: bool = False  # ex-skill character — uses dedicated editor flow
     created_at: str = ""
     updated_at: str = ""
 

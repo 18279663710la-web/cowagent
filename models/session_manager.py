@@ -45,6 +45,80 @@ class SessionManager(object):
         self.sessions = sessions
         self.sessioncls = sessioncls
         self.session_args = session_args
+        self._store = None  # lazy ConversationStore ref; None = not yet tried
+
+    # ------------------------------------------------------------------
+    # Persistence helpers (normal mode — agent mode has its own path)
+    # ------------------------------------------------------------------
+
+    def _get_store(self):
+        """Lazy-load the shared ConversationStore for normal-mode persistence."""
+        if self._store is None:
+            if conf().get("conversation_persistence", True):
+                try:
+                    from agent.memory import get_conversation_store
+                    self._store = get_conversation_store()
+                except Exception as e:
+                    logger.warning(f"[SessionManager] ConversationStore init failed: {e}")
+                    self._store = False  # sentinel — don't retry
+            else:
+                self._store = False
+        return self._store if self._store and self._store is not False else None
+
+    @staticmethod
+    def _extract_text(content) -> str:
+        """Convert stored JSON content (string or block list) to plain text."""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = [
+                b.get("text", "")
+                for b in content
+                if isinstance(b, dict) and b.get("type") == "text"
+            ]
+            return "\n".join(p for p in parts if p).strip()
+        return str(content)
+
+    def _restore_session(self, session: Session):
+        """Restore recent conversation history from the shared SQLite store."""
+        store = self._get_store()
+        if not store:
+            return
+        try:
+            saved = store.load_messages(session.session_id, max_turns=15)
+            if not saved:
+                return
+            for msg in saved:
+                role = msg.get("role")
+                if role not in ("user", "assistant"):
+                    continue
+                text = self._extract_text(msg.get("content", ""))
+                if not text:
+                    continue
+                session.messages.append({"role": role, "content": text})
+            logger.debug(
+                f"[SessionManager] Restored {len(saved)} messages for "
+                f"session={session.session_id}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"[SessionManager] Failed to restore session "
+                f"{session.session_id}: {e}"
+            )
+
+    def _persist_message(self, session_id: str, role: str, content: str):
+        """Append a single message to the persistent store."""
+        store = self._get_store()
+        if not store:
+            return
+        try:
+            store.append_messages(session_id, [{"role": role, "content": content}])
+        except Exception as e:
+            logger.warning(f"[SessionManager] Failed to persist message: {e}")
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def build_session(self, session_id, system_prompt=None):
         """
@@ -55,7 +129,10 @@ class SessionManager(object):
             return self.sessioncls(session_id, system_prompt, **self.session_args)
 
         if session_id not in self.sessions:
-            self.sessions[session_id] = self.sessioncls(session_id, system_prompt, **self.session_args)
+            session = self.sessioncls(session_id, system_prompt, **self.session_args)
+            self.sessions[session_id] = session
+            # Restore persisted conversation history (normal-mode persistence)
+            self._restore_session(session)
         elif system_prompt is not None:  # 如果有新的system_prompt，更新并重置session
             self.sessions[session_id].set_system_prompt(system_prompt)
         session = self.sessions[session_id]
@@ -64,6 +141,7 @@ class SessionManager(object):
     def session_query(self, query, session_id):
         session = self.build_session(session_id)
         session.add_query(query)
+        self._persist_message(session_id, "user", query)
         try:
             max_tokens = conf().get("conversation_max_tokens", 1000)
             total_tokens = session.discard_exceeding(max_tokens, None)
@@ -75,6 +153,7 @@ class SessionManager(object):
     def session_reply(self, reply, session_id, total_tokens=None):
         session = self.build_session(session_id)
         session.add_reply(reply)
+        self._persist_message(session_id, "assistant", reply)
         try:
             max_tokens = conf().get("conversation_max_tokens", 1000)
             tokens_cnt = session.discard_exceeding(max_tokens, total_tokens)

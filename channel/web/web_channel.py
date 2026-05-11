@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import sys
 import time
 import json
 import logging
@@ -623,6 +624,11 @@ class WebChannel(ChatChannel):
             '/api/characters/(.*)/activate', 'CharacterActivateHandler',
             '/api/characters/(.*)/deactivate', 'CharacterDeactivateHandler',
             '/api/characters/(.*)', 'CharacterDetailHandler',
+            # Ex (前任) character editor API
+            '/api/ex/upload', 'ExUploadHandler',
+            '/api/ex/parse', 'ExParseHandler',
+            '/api/ex/analyze', 'ExAnalyzeHandler',
+            '/api/ex/create', 'ExCreateHandler',
         )
         app = web.application(urls, globals(), autoreload=False)
 
@@ -2396,4 +2402,214 @@ class CharacterExportHandler:
             )
         except Exception as e:
             logger.error(f"[WebChannel] Character export error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+# ── Ex (前任) Character Editor API ─────────────────────────────────────
+
+_EX_SKILL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "skills", "ex-skill")
+_EX_UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "data", "ex_uploads")
+
+
+def _get_ex_skill_prompt(prompt_name: str) -> str:
+    """Read an ex-skill prompt template from disk."""
+    prompt_path = os.path.join(_EX_SKILL_DIR, "prompts", prompt_name)
+    if os.path.isfile(prompt_path):
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return ""
+
+
+def _run_wechat_parser(file_path: str, target: str) -> dict:
+    """Run the ex-skill wechat_parser on an uploaded file."""
+    import subprocess
+    import tempfile
+    output_path = os.path.join(tempfile.mkdtemp(), "analysis.md")
+    parser_path = os.path.join(_EX_SKILL_DIR, "tools", "wechat_parser.py")
+    try:
+        result = subprocess.run(
+            [sys.executable, parser_path, "--file", file_path,
+             "--target", target, "--output", output_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        if os.path.isfile(output_path):
+            with open(output_path, "r", encoding="utf-8") as f:
+                analysis = f.read()
+        else:
+            analysis = ""
+        return {
+            "status": "success",
+            "analysis": analysis,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+    except Exception as e:
+        logger.warning(f"[ExEditor] wechat_parser failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+class ExUploadHandler:
+    """POST /api/ex/upload — upload chat log file for ex character analysis."""
+
+    def POST(self):
+        _require_auth()
+        web.header("Content-Type", "application/json; charset=utf-8")
+        try:
+            import uuid
+            os.makedirs(_EX_UPLOAD_DIR, exist_ok=True)
+            x = web.input(chat_file={})
+            if "chat_file" not in x:
+                return json.dumps({"status": "error", "message": "No file uploaded"})
+            fileobj = x["chat_file"]
+            ext = os.path.splitext(fileobj.filename)[1] or ".txt"
+            file_id = uuid.uuid4().hex[:12]
+            save_path = os.path.join(_EX_UPLOAD_DIR, f"{file_id}{ext}")
+            with open(save_path, "wb") as f:
+                f.write(fileobj.file.read())
+            return json.dumps({
+                "status": "success",
+                "file_id": file_id,
+                "filename": fileobj.filename,
+                "path": save_path,
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[ExEditor] Upload error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class ExParseHandler:
+    """POST /api/ex/parse — parse uploaded chat log with wechat_parser."""
+
+    def POST(self):
+        _require_auth()
+        web.header("Content-Type", "application/json; charset=utf-8")
+        try:
+            body = json.loads(web.data())
+            file_id = body.get("file_id")
+            target = body.get("target", "")
+            if not file_id or not target:
+                return json.dumps({"status": "error", "message": "file_id and target required"})
+            # find the uploaded file
+            found = None
+            for name in os.listdir(_EX_UPLOAD_DIR):
+                if name.startswith(file_id):
+                    found = os.path.join(_EX_UPLOAD_DIR, name)
+                    break
+            if not found:
+                return json.dumps({"status": "error", "message": "File not found"})
+            result = _run_wechat_parser(found, target)
+            return json.dumps(result, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[ExEditor] Parse error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class ExAnalyzeHandler:
+    """POST /api/ex/analyze — use LLM + ex-skill prompts to build persona & memory."""
+
+    def POST(self):
+        _require_auth()
+        web.header("Content-Type", "application/json; charset=utf-8")
+        try:
+            body = json.loads(web.data())
+            parser_output = body.get("parser_output", "")
+            basic_info = body.get("basic_info", {})
+            if not parser_output:
+                return json.dumps({"status": "error", "message": "parser_output required"})
+
+            # Load ex-skill prompt templates
+            persona_prompt = _get_ex_skill_prompt("persona_analyzer.md")
+            memory_prompt = _get_ex_skill_prompt("memory_analyzer.md")
+
+            # Build analysis context
+            context = parser_output
+            if basic_info:
+                info_lines = [f"{k}: {v}" for k, v in basic_info.items() if v]
+                context = "基本信息:\n" + "\n".join(info_lines) + "\n\n" + parser_output
+
+            result = {"status": "success", "persona": "", "memory": "", "raw": ""}
+
+            # Try LLM-based analysis if model is available
+            try:
+                from bridge.bridge import Bridge
+                bridge = Bridge()
+                bot = bridge.get_bot("chat")
+                if bot and persona_prompt:
+                    resp = bot.reply(
+                        persona_prompt + "\n\n请分析以下聊天记录并提取人物特征:\n\n" + context[:6000],
+                        None,
+                    )
+                    if resp and resp.content:
+                        result["persona"] = resp.content
+                if bot and memory_prompt:
+                    resp = bot.reply(
+                        memory_prompt + "\n\n请分析以下聊天记录并提取共同记忆:\n\n" + context[:6000],
+                        None,
+                    )
+                    if resp and resp.content:
+                        result["memory"] = resp.content
+            except Exception as e:
+                logger.warning(f"[ExEditor] LLM analysis failed: {e}")
+                result["raw"] = parser_output
+
+            return json.dumps(result, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[ExEditor] Analyze error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class ExCreateHandler:
+    """POST /api/ex/create — create a character from analyzed ex data."""
+
+    def POST(self):
+        _require_auth()
+        web.header("Content-Type", "application/json; charset=utf-8")
+        try:
+            from characters.registry import get_character_manager
+            cm = get_character_manager()
+            if not cm:
+                return json.dumps({"status": "error", "message": "Character system not enabled"})
+            body = json.loads(web.data())
+            name = body.get("name", "前任").strip() or "前任"
+            persona_text = body.get("persona", "")
+            memory_text = body.get("memory", "")
+
+            # Build character data from ex-skill output
+            char_data = {
+                "name": name,
+                "gender": body.get("gender", "保密"),
+                "age": body.get("age", 0),
+                "personality": persona_text[:2000] if persona_text else "",
+                "language_style": body.get("language_style", ""),
+                "catchphrases": body.get("catchphrases", []),
+                "interests": body.get("interests", []),
+                "background": body.get("background", ""),
+                "relationship": "前任",
+                "mbti": body.get("mbti", ""),
+                "zodiac": body.get("zodiac", ""),
+                "emotional_expression": body.get("emotional_expression", ""),
+                "interaction_style": body.get("interaction_style", ""),
+                "rules": [
+                    "你不是AI不是助手不是机器人 你就是ta本人",
+                    "用ta的方式说话 保持ta的棱角 不做完美的假人",
+                    "已有的共同记忆和经历自然地融入对话 不刻意提起",
+                ],
+                "ex_skill": True,
+            }
+
+            char = cm.create_character(char_data)
+
+            # Write memory file to character workspace
+            if memory_text and hasattr(cm, "store"):
+                char_ws = cm.store.get_character_workspace(char.id)
+                if char_ws:
+                    memory_file = os.path.join(char_ws, "MEMORY.md")
+                    with open(memory_file, "w", encoding="utf-8") as f:
+                        f.write(memory_text)
+
+            return json.dumps({"status": "success", "character": char.to_dict()}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[ExEditor] Create error: {e}")
             return json.dumps({"status": "error", "message": str(e)})

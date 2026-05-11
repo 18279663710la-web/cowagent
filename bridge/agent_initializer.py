@@ -152,23 +152,35 @@ class AgentInitializer:
             # Scheduler tasks run on a stable isolated session per task and
             # can fire many times a day; a smaller restore window keeps prompt
             # cost bounded while still letting the agent see "last few" runs
-            # for trend / dedup style logic. Regular chat sessions keep the
-            # original heuristic so user dialogues feel continuous.
+            # for trend / dedup style logic.
             if session_id.startswith("scheduler_"):
-                restore_turns = max(1, max_turns // 5)
+                restore_turns = max(3, max_turns // 4)
             else:
-                restore_turns = max(3, max_turns // 6)
+                # Restore as many turns as configured, capped by the DB
+                # contents. The AgentStreamExecutor will handle context
+                # trimming if the restored messages exceed the token budget.
+                restore_turns = max_turns
             saved = store.load_messages(session_id, max_turns=restore_turns)
             if saved:
                 filtered = self._filter_text_only_messages(saved)
                 if filtered:
                     with agent.messages_lock:
                         agent.messages = filtered
-                    logger.debug(
+                    logger.info(
                         f"[AgentInitializer] Restored {len(filtered)} text messages "
                         f"(from {len(saved)} total, {restore_turns} turns cap) "
                         f"for session={session_id}"
                     )
+                else:
+                    logger.debug(
+                        f"[AgentInitializer] No text messages after filtering "
+                        f"({len(saved)} raw) for session={session_id}"
+                    )
+            else:
+                logger.debug(
+                    f"[AgentInitializer] No saved messages found for "
+                    f"session={session_id}"
+                )
         except Exception as e:
             logger.warning(
                 f"[AgentInitializer] Failed to restore conversation history for "

@@ -404,25 +404,40 @@ class MemoryStorage:
         scopes: List[str],
         limit: int
     ) -> List[SearchResult]:
-        """LIKE-based search for CJK characters"""
+        """LIKE-based search using CJK bigram tokenization for robust matching."""
         import re
-        # Extract CJK words (2+ characters)
-        cjk_words = re.findall(r'[\u4e00-\u9fff]{2,}', query)
-        if not cjk_words:
+        # Extract individual CJK characters, then build overlapping bigrams.
+        # The old regex treated the entire CJK run as one word, which failed
+        # when the query text did not appear verbatim in the stored text.
+        cjk_chars = re.findall(r'[一-鿿]', query)
+        if len(cjk_chars) < 2:
             return []
-        
+
+        # Build bigrams: "小明喜欢" -> ["小明", "明喜", "喜欢"]
+        bigrams = []
+        for i in range(len(cjk_chars) - 1):
+            bigrams.append(cjk_chars[i] + cjk_chars[i + 1])
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique_bigrams = []
+        for bg in bigrams:
+            if bg not in seen:
+                seen.add(bg)
+                unique_bigrams.append(bg)
+
         scope_placeholders = ','.join('?' * len(scopes))
-        
-        # Build LIKE conditions for each word
+
+        # Build LIKE conditions for each bigram
         like_conditions = []
         params = []
-        for word in cjk_words:
+        for bg in unique_bigrams:
             like_conditions.append("text LIKE ?")
-            params.append(f'%{word}%')
-        
+            params.append(f'%{bg}%')
+
         where_clause = ' OR '.join(like_conditions)
         params.extend(scopes)
-        
+
         if user_id:
             sql_query = f"""
                 SELECT * FROM chunks
@@ -440,7 +455,7 @@ class MemoryStorage:
                 LIMIT ?
             """
             params.append(limit)
-        
+
         try:
             rows = self.conn.execute(sql_query, params).fetchall()
             return [
@@ -448,7 +463,7 @@ class MemoryStorage:
                     path=row['path'],
                     start_line=row['start_line'],
                     end_line=row['end_line'],
-                    score=0.5,  # Fixed score for LIKE search
+                    score=0.5,
                     snippet=self._truncate_text(row['text'], 500),
                     source=row['source'],
                     user_id=row['user_id']
@@ -457,7 +472,7 @@ class MemoryStorage:
             ]
         except Exception:
             return []
-    
+
     def delete_by_path(self, path: str):
         """Delete all chunks from a file"""
         self.conn.execute("""

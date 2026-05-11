@@ -35,6 +35,8 @@ class ChatChannel(Channel):
         self.futures = {}
         self.sessions = {}
         self.lock = threading.Lock()
+        self._merge_lock = threading.Lock()
+        self._merge_buffers = {}  # session_id -> {messages: [], timer: Timer|None}
         _thread = threading.Thread(target=self.consume)
         _thread.setDaemon(True)
         _thread.start()
@@ -503,16 +505,74 @@ class ChatChannel(Channel):
 
     def produce(self, context: Context):
         session_id = context["session_id"]
+        interval = conf().get("message_merge_interval", 0)
+        is_command = context.type == ContextType.TEXT and context.content.startswith("#")
+
+        # Commands bypass the merge buffer — they must be processed immediately.
+        # Non-text messages also bypass the buffer.
+        if interval <= 0 or is_command or context.type != ContextType.TEXT:
+            with self.lock:
+                if session_id not in self.sessions:
+                    self.sessions[session_id] = [
+                        Dequeue(),
+                        threading.BoundedSemaphore(conf().get("concurrency_in_session", 1)),
+                    ]
+                if is_command:
+                    self.sessions[session_id][0].putleft(context)
+                else:
+                    self.sessions[session_id][0].put(context)
+            return
+
+        # Merge-buffer path: accumulate user text messages and reset a
+        # debounce timer. When the timer finally expires the buffered texts
+        # are joined and enqueued as a single message.
+        with self._merge_lock:
+            buf = self._merge_buffers.get(session_id)
+            if buf is None:
+                buf = {"messages": [], "timer": None}
+                self._merge_buffers[session_id] = buf
+
+            buf["messages"].append(context.content)
+
+            if buf["timer"] is not None:
+                buf["timer"].cancel()
+
+            buf["timer"] = threading.Timer(
+                interval,
+                self._flush_merge_buffer,
+                args=[session_id, context],
+            )
+            buf["timer"].daemon = True
+            buf["timer"].start()
+
+    def _flush_merge_buffer(self, session_id, template_context: Context):
+        """Timer callback: merge buffered texts and enqueue as one message."""
+        with self._merge_lock:
+            buf = self._merge_buffers.pop(session_id, None)
+            if buf is None:
+                return
+            texts = buf["messages"]
+            buf["timer"] = None
+
+        if not texts:
+            return
+
+        merged_content = "，".join(texts)
+        merged_context = Context(ContextType.TEXT, merged_content)
+        merged_context.kwargs = template_context.kwargs.copy()
+        merged_context["session_id"] = session_id
+        merged_context["channel_type"] = template_context.get("channel_type", "")
+        merged_context["msg"] = template_context.get("msg")
+
+        # Inject via the normal queue path (merge interval bypassed inside
+        # produce because interval is already served its purpose here).
         with self.lock:
             if session_id not in self.sessions:
                 self.sessions[session_id] = [
                     Dequeue(),
                     threading.BoundedSemaphore(conf().get("concurrency_in_session", 1)),
                 ]
-            if context.type == ContextType.TEXT and context.content.startswith("#"):
-                self.sessions[session_id][0].putleft(context)  # 优先处理管理命令
-            else:
-                self.sessions[session_id][0].put(context)
+            self.sessions[session_id][0].put(merged_context)
 
     # 消费者函数，单独线程，用于从消息队列中取出消息并处理
     def consume(self):

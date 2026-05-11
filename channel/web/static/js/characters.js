@@ -37,6 +37,9 @@ function renderCharacterList(chars) {
 }
 
 function renderCharacterCard(c) {
+    const exBadge = c.ex_skill
+        ? '<span class="px-2 py-0.5 text-xs rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-medium"><i class="fas fa-heart-broken mr-1"></i>前任</span>'
+        : '';
     const activeBadge = c.is_active
         ? '<span class="px-2 py-0.5 text-xs rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-medium">已激活</span>'
         : '';
@@ -56,7 +59,7 @@ function renderCharacterCard(c) {
                     ${escHtml(c.name).charAt(0)}
                 </div>
                 <div>
-                    <h4 class="font-semibold text-slate-800 dark:text-slate-100 text-sm">${escHtml(c.name)} ${activeBadge}</h4>
+                    <h4 class="font-semibold text-slate-800 dark:text-slate-100 text-sm">${escHtml(c.name)} ${exBadge}${activeBadge}</h4>
                     <p class="text-xs text-slate-500 dark:text-slate-400">${escHtml(c.gender)} · ${c.age}岁 · ${escHtml(c.relationship)}</p>
                 </div>
             </div>
@@ -191,10 +194,6 @@ async function saveCharacter() {
     }
 }
 
-function editCharacter(charId) {
-    showCharacterEditor(charId);
-}
-
 async function deleteCharacter(charId) {
     if (!confirm('确定要删除这个角色吗？此操作不可撤销。')) return;
     try {
@@ -289,3 +288,255 @@ document.addEventListener('click', function(e) {
     var item = e.target.closest('[data-view="characters"]');
     if (item) setTimeout(loadCharacters, 150);
 });
+
+// ── Ex (前任) Character Editor ──────────────────────────────────────────
+
+var _exData = { fileId: '', fileName: '', parseOutput: '', persona: '', memory: '', source: 'html' };
+
+function exSelectSource(source) {
+    _exData.source = source;
+    var buttons = document.querySelectorAll('.ex-source-btn');
+    buttons.forEach(function(btn) {
+        if (btn.getAttribute('data-source') === source) {
+            btn.className = btn.className.replace(/border-slate-200 dark:border-white\/10 bg-white dark:bg-\[#1A1A1A\]/g, '');
+            btn.classList.add('border-primary-400', 'bg-primary-50', 'dark:bg-primary-900/10');
+        } else {
+            btn.classList.remove('border-primary-400', 'bg-primary-50', 'dark:bg-primary-900/10');
+            btn.classList.add('border-slate-200', 'dark:border-white/10');
+            if (!btn.className.includes('bg-white')) {
+                // keep existing bg
+            }
+        }
+    });
+
+    var textInput = document.getElementById('ex-text-input');
+    var fileArea = document.getElementById('ex-file-area');
+    var parseBtn = document.getElementById('ex-btn-parse');
+
+    if (source === 'text') {
+        textInput.classList.remove('hidden');
+        fileArea.classList.add('hidden');
+        parseBtn.disabled = false;
+        _exData.fileId = '';
+        _exData.fileName = '';
+    } else {
+        textInput.classList.add('hidden');
+        fileArea.classList.remove('hidden');
+        parseBtn.disabled = !_exData.fileId;
+    }
+}
+
+function editCharacter(charId) {
+    // Check if this is an ex-skill character — if so, show the ex editor
+    fetch('/api/characters/' + charId)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.status === 'success' && data.character && data.character.ex_skill) {
+                showExEditor(charId, data.character);
+            } else {
+                showCharacterEditor(charId);
+            }
+        })
+        .catch(function() { showCharacterEditor(charId); });
+}
+
+function showExEditor(charId, charData) {
+    var overlay = document.getElementById('ex-editor-overlay');
+    if (!overlay) { showCharacterEditor(charId); return; }
+    overlay.classList.remove('hidden');
+    hideCharacterEditor();
+
+    document.getElementById('ex-char-id').value = charId || '';
+    _exData = { fileId: '', fileName: '', parseOutput: '', persona: '', memory: '' };
+
+    if (charData) {
+        document.getElementById('ex-name').value = charData.name || '';
+    }
+    exShowStep(1);
+}
+
+function hideExEditor() {
+    var overlay = document.getElementById('ex-editor-overlay');
+    if (overlay) overlay.classList.add('hidden');
+}
+
+function exShowStep(n) {
+    var steps = document.querySelectorAll('#ex-steps .step-dot');
+    steps.forEach(function(dot, i) {
+        if (i < n) {
+            dot.className = 'step-dot w-6 h-6 rounded-full bg-primary-500 text-white flex items-center justify-center font-bold';
+        } else {
+            dot.className = 'step-dot w-6 h-6 rounded-full bg-slate-200 dark:bg-white/10 text-slate-500 flex items-center justify-center';
+        }
+    });
+
+    var panels = document.querySelectorAll('.ex-step');
+    panels.forEach(function(p) { p.classList.add('hidden'); });
+    var target = document.getElementById('ex-step' + n);
+    if (target) target.classList.remove('hidden');
+    document.getElementById('ex-loading').classList.add('hidden');
+}
+
+function exNextStep(n) {
+    if (n === 2) {
+        var name = document.getElementById('ex-name').value.trim();
+        var target = document.getElementById('ex-target').value.trim();
+        if (!name || !target) { alert('请填写角色名和微信昵称'); return; }
+    }
+    exShowStep(n);
+}
+
+function exFileSelected(input) {
+    if (input.files.length > 0) {
+        var f = input.files[0];
+        document.getElementById('ex-file-name').textContent = f.name + ' (' + (f.size / 1024).toFixed(1) + ' KB)';
+        document.getElementById('ex-btn-parse').disabled = false;
+    }
+}
+
+async function exParseFile() {
+    var target = document.getElementById('ex-target').value.trim();
+    var name = document.getElementById('ex-name').value.trim();
+    var fileInput = document.getElementById('ex-file-input');
+    var statusEl = document.getElementById('ex-upload-status');
+
+    // Text source: skip upload/parse, go directly to analysis
+    if (_exData.source === 'text') {
+        var textContent = document.getElementById('ex-text-content').value.trim();
+        if (!textContent) { alert('请粘贴关于TA的记忆内容'); return; }
+
+        // Build a plain-text analysis summary for the LLM
+        _exData.parseOutput = [
+            '# 主观记忆描述',
+            '来源: 口述/粘贴',
+            '角色名: ' + (name || '未填写'),
+            '解析昵称: ' + (target || '未填写'),
+            '',
+            textContent,
+        ].join('\n');
+
+        document.getElementById('ex-parse-output').querySelector('pre').textContent = _exData.parseOutput;
+        exShowStep(3);
+        return;
+    }
+
+    // File-based sources
+    if (!fileInput.files.length) { alert('请选择文件'); return; }
+
+    statusEl.classList.remove('hidden');
+    statusEl.querySelector('span').textContent = '上传文件中...';
+
+    var formData = new FormData();
+    formData.append('chat_file', fileInput.files[0]);
+    formData.append('source', _exData.source);
+
+    try {
+        var uploadResp = await fetch('/api/ex/upload', { method: 'POST', body: formData });
+        var uploadData = await uploadResp.json();
+        if (uploadData.status !== 'success') { alert('上传失败: ' + uploadData.message); return; }
+        _exData.fileId = uploadData.file_id;
+
+        // Parse (only for chat sources that have structured format)
+        statusEl.querySelector('span').textContent = '解析中...';
+        var parseResp = await fetch('/api/ex/parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file_id: _exData.fileId, target: target, source: _exData.source }),
+        });
+        var parseData = await parseResp.json();
+        statusEl.classList.add('hidden');
+
+        if (parseData.status !== 'success') {
+            // If parser is not available for this type, use raw content
+            _exData.parseOutput = parseData.stdout || parseData.stderr || '文件已上传，可直接进入 LLM 分析';
+        } else {
+            _exData.parseOutput = parseData.analysis || parseData.stdout || parseData.stderr || '解析完成';
+        }
+
+        document.getElementById('ex-parse-output').querySelector('pre').textContent = _exData.parseOutput;
+        exShowStep(3);
+    } catch (e) {
+        statusEl.classList.add('hidden');
+        alert('操作失败: ' + e.message);
+    }
+}
+
+async function exAnalyze() {
+    if (!_exData.parseOutput) { alert('请先完成解析'); return; }
+
+    exShowLoading('AI 正在分析聊天记录，提取人设和记忆...');
+
+    try {
+        var resp = await fetch('/api/ex/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                parser_output: _exData.parseOutput,
+                source: _exData.source,
+                basic_info: {
+                    name: document.getElementById('ex-name').value.trim(),
+                    target: document.getElementById('ex-target').value.trim(),
+                },
+            }),
+        });
+        var data = await resp.json();
+        if (data.status !== 'success') { alert('分析失败: ' + (data.message || '未知错误')); return; }
+
+        _exData.persona = data.persona || data.raw || _exData.parseOutput;
+        _exData.memory = data.memory || '';
+
+        document.getElementById('ex-persona').value = _exData.persona;
+        document.getElementById('ex-memory').value = _exData.memory;
+        exShowStep(4);
+    } catch (e) {
+        alert('分析失败: ' + e.message);
+        exShowStep(3);
+    }
+}
+
+async function exCreateCharacter() {
+    var name = document.getElementById('ex-name').value.trim();
+    if (!name) { alert('请填写角色名'); return; }
+
+    // Use edited values if user modified them
+    var persona = document.getElementById('ex-persona').value.trim() || _exData.persona;
+    var memory = document.getElementById('ex-memory').value.trim() || _exData.memory;
+
+    exShowLoading('正在创建角色...');
+
+    try {
+        var charId = document.getElementById('ex-char-id').value;
+        var body = {
+            name: name,
+            persona: persona,
+            memory: memory,
+            target: document.getElementById('ex-target').value.trim(),
+        };
+
+        // Update existing or create new
+        var url = charId ? '/api/characters/' + charId : '/api/ex/create';
+        var method = charId ? 'PUT' : 'POST';
+
+        var resp = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        var data = await resp.json();
+        if (data.status === 'success') {
+            hideExEditor();
+            loadCharacters();
+        } else {
+            alert('创建失败: ' + (data.message || '未知错误'));
+        }
+    } catch (e) {
+        alert('创建失败: ' + e.message);
+    }
+}
+
+function exShowLoading(msg) {
+    var panels = document.querySelectorAll('.ex-step');
+    panels.forEach(function(p) { p.classList.add('hidden'); });
+    document.getElementById('ex-loading').classList.remove('hidden');
+    document.getElementById('ex-loading-msg').textContent = msg;
+}

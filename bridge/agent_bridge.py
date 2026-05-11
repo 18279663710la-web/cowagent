@@ -549,23 +549,58 @@ class AgentBridge:
                 # Log execution summary
                 event_handler.log_summary()
 
-            # Persist new messages generated during this run
-            if session_id:
+            # Persist new messages generated during this run.
+            # When the character system is active the storage key must match
+            # the composite "{user_id}:{character_id}" key used by
+            # _restore_conversation_history, otherwise persistence and
+            # restoration use different keys and history is lost on restart.
+            storage_key = session_id
+            if session_id and self._is_character_active():
+                char = self.character_manager.get_active_character(session_id)
+                if char:
+                    storage_key = self._character_agent_key(session_id, char.id)
+                    logger.debug(
+                        f"[AgentBridge] Using character-scoped storage key: "
+                        f"{storage_key}"
+                    )
+            self._last_storage_key = storage_key
+
+            if storage_key:
                 channel_type = (context.get("channel_type") or "") if context else ""
                 new_messages = getattr(agent, '_last_run_new_messages', [])
                 if new_messages:
-                    self._persist_messages(session_id, list(new_messages), channel_type)
+                    self._persist_messages(storage_key, list(new_messages), channel_type)
                 else:
                     with agent.messages_lock:
                         msg_count = len(agent.messages)
                     if msg_count == 0:
                         try:
                             from agent.memory import get_conversation_store
-                            get_conversation_store().clear_session(session_id)
-                            logger.info(f"[AgentBridge] Cleared DB for recovered session: {session_id}")
+                            get_conversation_store().clear_session(storage_key)
+                            logger.info(f"[AgentBridge] Cleared DB for recovered session: {storage_key}")
                         except Exception as e:
                             logger.warning(f"[AgentBridge] Failed to clear DB after recovery: {e}")
             
+            # Index new conversation turns into the vector memory so
+            # they become searchable long-term memories immediately.
+            # Runs in a daemon thread to not block the reply.
+            if (
+                storage_key
+                and agent
+                and agent.memory_manager
+                and conf().get("memory_auto_index", True)
+            ):
+                try:
+                    new_msgs = getattr(agent, '_last_run_new_messages', [])
+                    if new_msgs:
+                        mem_text = self._build_conversation_memory_text(new_msgs)
+                        if mem_text:
+                            self._index_memory_async(
+                                agent.memory_manager, mem_text, storage_key
+                            )
+                except Exception as e:
+                    logger.debug(f"[AgentBridge] Memory indexing skipped: {e}")
+
             # Post-message hot-reload: detect edits to ~/cow/mcp.json and
             # sync any new/removed MCP tools into the live agent in the
             # background. Off the critical path so user latency is unaffected;
@@ -595,14 +630,14 @@ class AgentBridge:
             logger.error(f"Agent reply error: {e}")
             # If the agent cleared its messages due to format error / overflow,
             # also purge the DB so the next request starts clean.
-            if session_id and agent:
+            if hasattr(self, '_last_storage_key') and agent:
                 try:
                     with agent.messages_lock:
                         msg_count = len(agent.messages)
                     if msg_count == 0:
                         from agent.memory import get_conversation_store
-                        get_conversation_store().clear_session(session_id)
-                        logger.info(f"[AgentBridge] Cleared DB for session after error: {session_id}")
+                        get_conversation_store().clear_session(self._last_storage_key)
+                        logger.info(f"[AgentBridge] Cleared DB for session after error: {self._last_storage_key}")
                 except Exception as db_err:
                     logger.warning(f"[AgentBridge] Failed to clear DB after error: {db_err}")
             return Reply(ReplyType.ERROR, f"Agent error: {str(e)}")
@@ -779,10 +814,80 @@ class AgentBridge:
             get_conversation_store().append_messages(
                 session_id, messages_to_store, channel_type=channel_type
             )
+            logger.debug(
+                f"[AgentBridge] Persisted {len(messages_to_store)} messages "
+                f"for session={session_id}"
+            )
         except Exception as e:
             logger.warning(
                 f"[AgentBridge] Failed to persist messages for session={session_id}: {e}"
             )
+
+    # ------------------------------------------------------------------
+    # Conversation → vector memory indexing
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_conversation_memory_text(messages: list) -> str:
+        """Extract user+assistant text pairs from a message batch.
+
+        Returns a compact summary string suitable for embedding into the
+        vector memory store, or empty string if there is nothing to index.
+        """
+        pairs = []
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            role = msg.get("role")
+            if role not in ("user", "assistant"):
+                continue
+            content = msg.get("content", "")
+            text = AgentBridge._extract_message_text(content)
+            if not text:
+                continue
+            label = "用户" if role == "user" else "助手"
+            pairs.append(f"{label}: {text[:300]}")
+
+        if not pairs:
+            return ""
+
+        return "对话记录:\n" + "\n".join(pairs)
+
+    @staticmethod
+    def _extract_message_text(content) -> str:
+        """Pull plain text from a content value that may be a str or block list."""
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts = [
+                b.get("text", "")
+                for b in content
+                if isinstance(b, dict) and b.get("type") == "text"
+            ]
+            return "\n".join(p for p in parts if p).strip()
+        return ""
+
+    @staticmethod
+    def _index_memory_async(memory_manager, text: str, session_id: str):
+        """Fire-and-forget: embed conversation text into the vector store."""
+        import threading
+
+        def _run():
+            try:
+                memory_manager.add_memory_sync(
+                    content=text,
+                    user_id=session_id,
+                    scope="user",
+                    source="session",
+                )
+                logger.debug(
+                    f"[AgentBridge] Indexed conversation memory "
+                    f"for session={session_id} ({len(text)} chars)"
+                )
+            except Exception as e:
+                logger.warning(f"[AgentBridge] Memory indexing failed: {e}")
+
+        threading.Thread(target=_run, daemon=True, name="mem-index").start()
 
     # Marker used to identify scheduler-injected user messages so we can apply
     # a sliding window without touching real user turns. The legacy prefix

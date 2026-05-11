@@ -192,6 +192,56 @@ class MemoryManager:
         filtered = [r for r in merged if r.score >= min_score]
         return filtered[:max_results]
     
+    def search_sync(
+        self,
+        query: str,
+        user_id: Optional[str] = None,
+        max_results: Optional[int] = None,
+        min_score: Optional[float] = None,
+        include_shared: bool = True,
+    ) -> List[SearchResult]:
+        """
+        Synchronous wrapper for memory search.
+
+        Called at request time to inject relevant long-term memories into
+        the system prompt.  Skips the async sync step — best-effort only.
+        """
+        max_results = max_results or self.config.max_results
+        min_score = min_score or self.config.min_score
+
+        scopes = []
+        if include_shared:
+            scopes.append("shared")
+        if user_id:
+            scopes.append("user")
+        if not scopes:
+            return []
+
+        vector_results = []
+        if self.embedding_provider:
+            try:
+                query_embedding = self.embedding_provider.embed(query)
+                vector_results = self.storage.search_vector(
+                    query_embedding=query_embedding,
+                    user_id=user_id,
+                    scopes=scopes,
+                    limit=max_results * 2,
+                )
+            except Exception as e:
+                from common.log import logger
+                logger.warning(f"[MemoryManager] Vector search failed: {e}")
+
+        keyword_results = self.storage.search_keyword(
+            query=query, user_id=user_id, scopes=scopes, limit=max_results * 2
+        )
+
+        merged = self._merge_results(
+            vector_results, keyword_results,
+            self.config.vector_weight, self.config.keyword_weight,
+        )
+        filtered = [r for r in merged if r.score >= min_score]
+        return filtered[:max_results]
+
     async def add_memory(
         self,
         content: str,
@@ -202,16 +252,43 @@ class MemoryManager:
         metadata: Optional[Dict[str, Any]] = None
     ):
         """
-        Add new memory content
-        
-        Args:
-            content: Memory content
-            user_id: User ID for user-scoped memory
-            scope: Memory scope ("shared", "user", "session")
-            source: Memory source ("memory" or "session")
-            path: File path (auto-generated if not provided)
-            metadata: Additional metadata
+        Add new memory content (async — the async sync step is skipped in
+        favour of direct indexing via _add_memory_impl).
         """
+        if not content.strip():
+            return
+        self._add_memory_impl(content, user_id, scope, source, path, metadata)
+
+    def add_memory_sync(
+        self,
+        content: str,
+        user_id: Optional[str] = None,
+        scope: str = "shared",
+        source: str = "session",
+        path: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Synchronously index a piece of memory text into the vector store.
+
+        Called from flush / summarisation pipelines that already run in a
+        background thread so they don't need the async ceremony.
+        """
+        if not content or not content.strip():
+            return
+        self._add_memory_impl(content, user_id, scope, source, path, metadata)
+        self._dirty = False  # directly indexed — no pending sync needed
+
+    def _add_memory_impl(
+        self,
+        content: str,
+        user_id: Optional[str] = None,
+        scope: str = "shared",
+        source: str = "memory",
+        path: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Shared implementation for both sync and async add_memory."""
         if not content.strip():
             return
         
@@ -404,25 +481,34 @@ class MemoryManager:
         context_summary_callback=None,
     ) -> bool:
         """
-        Flush conversation summary to daily memory file.
-
-        Args:
-            messages: Conversation message list
-            user_id: Optional user ID
-            reason: "threshold" | "overflow" | "daily_summary"
-            max_messages: Max recent messages to include (0 = all)
-            context_summary_callback: Optional callback(str) invoked with the
-                daily summary text for in-context injection
-
-        Returns:
-            True if flush was dispatched
+        Flush conversation summary to daily memory file AND index into the
+        vector store so it becomes immediately searchable.
         """
+        # Always index the flushed summary into the vector DB.
+        # The callback runs in the flush worker thread, which is fine for
+        # the blocking embedding call.
+        def _index_and_callback(daily_text: str):
+            try:
+                self.add_memory_sync(
+                    content=daily_text,
+                    user_id=user_id,
+                    scope="user" if user_id else "shared",
+                    source="session",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to index flushed memory: {e}")
+            if context_summary_callback:
+                try:
+                    context_summary_callback(daily_text)
+                except Exception as e:
+                    logger.warning(f"Context summary callback failed: {e}")
+
         success = self.flush_manager.flush_from_messages(
             messages=messages,
             user_id=user_id,
             reason=reason,
             max_messages=max_messages,
-            context_summary_callback=context_summary_callback,
+            context_summary_callback=_index_and_callback,
         )
         if success:
             self._dirty = True

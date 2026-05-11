@@ -71,6 +71,7 @@ class PromptBuilder:
             skill_manager=skill_manager,
             memory_manager=memory_manager,
             runtime_info=runtime_info,
+            retrieved_memories=kwargs.pop("retrieved_memories", None),
             **kwargs
         )
 
@@ -85,12 +86,14 @@ def build_agent_system_prompt(
     skill_manager: Any = None,
     memory_manager: Any = None,
     runtime_info: Optional[Dict[str, Any]] = None,
+    retrieved_memories: Optional[str] = None,
     **kwargs
 ) -> str:
     """
     构建Agent系统提示词
-    
+
     顺序说明（按重要性和逻辑关系排列）:
+    0. 动态记忆注入 - 从向量数据库检索到的相关记忆（每次请求动态变化）
     1. 工具系统 - 核心能力，最先介绍
     2. 技能系统 - 紧跟工具，因为技能需要用 read 工具读取
     3. 记忆系统 - 记忆检索与写入引导
@@ -99,7 +102,7 @@ def build_agent_system_prompt(
     5. 用户身份 - 用户信息（可选）
     6. 项目上下文 - AGENT.md, USER.md, RULE.md, MEMORY.md, BOOTSTRAP.md
     7. 运行时信息 - 元信息（时间、模型等）
-    
+
     Args:
         workspace_dir: 工作空间目录
         language: 语言 ("zh" 或 "en")
@@ -110,21 +113,26 @@ def build_agent_system_prompt(
         skill_manager: 技能管理器
         memory_manager: 记忆管理器
         runtime_info: 运行时信息
+        retrieved_memories: 动态检索到的相关记忆文本（注入到提示词顶部）
         **kwargs: 其他参数
-        
+
     Returns:
         完整的系统提示词
     """
     sections = []
-    
+
+    # 0. 动态记忆注入（从向量数据库检索到的与当前提问相关的记忆）
+    if retrieved_memories:
+        sections.append(retrieved_memories)
+
     # 1. 工具系统（最重要，放在最前面）
     if tools:
         sections.extend(_build_tooling_section(tools, language))
-    
+
     # 2. 技能系统（紧跟工具，因为需要用 read 工具）
     if skill_manager:
         sections.extend(_build_skills_section(skill_manager, tools, language))
-    
+
     # 3. 记忆系统（独立的记忆能力）
     if memory_manager:
         sections.extend(_build_memory_section(memory_manager, tools, language))
@@ -132,22 +140,22 @@ def build_agent_system_prompt(
     # 3.5 知识系统（结构化知识库）
     if conf().get("knowledge", True):
         sections.extend(_build_knowledge_section(workspace_dir, language))
-    
+
     # 4. 工作空间（工作环境说明）
     sections.extend(_build_workspace_section(workspace_dir, language))
-    
+
     # 5. 用户身份（如果有）
     if user_identity:
         sections.extend(_build_user_identity_section(user_identity, language))
-    
+
     # 6. 项目上下文文件（AGENT.md, USER.md, RULE.md - 定义人格）
     if context_files:
         sections.extend(_build_context_files_section(context_files, language))
-    
+
     # 7. 运行时信息（元信息，放在最后）
     if runtime_info:
         sections.extend(_build_runtime_section(runtime_info, language))
-    
+
     return "\n".join(sections)
 
 
