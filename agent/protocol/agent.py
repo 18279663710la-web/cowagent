@@ -4,6 +4,7 @@ import time
 import threading
 
 from common.log import logger
+from config import conf
 from agent.protocol.models import LLMRequest, LLMModel
 from agent.protocol.agent_stream import AgentStreamExecutor
 from agent.protocol.result import AgentAction, AgentActionType, ToolResult, AgentResult
@@ -437,7 +438,6 @@ class Agent:
             original_length = len(self.messages)
 
         # Get max_context_turns from config
-        from config import conf
         max_context_turns = conf().get("agent_max_context_turns", 20)
         
         # Create stream executor with copied message history

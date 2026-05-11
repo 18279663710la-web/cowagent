@@ -528,7 +528,6 @@ class AgentBridge:
             # blow up prompt cost. Regular user chats are not touched here —
             # the agent's own context manager handles that path.
             if session_id and session_id.startswith("scheduler_"):
-                from config import conf
                 scheduler_keep_turns = max(
                     1, int(conf().get("agent_max_context_turns", 20)) // 5
                 )
@@ -627,7 +626,9 @@ class AgentBridge:
             return Reply(ReplyType.TEXT, response)
             
         except Exception as e:
+            import traceback
             logger.error(f"Agent reply error: {e}")
+            logger.error(traceback.format_exc())
             # If the agent cleared its messages due to format error / overflow,
             # also purge the DB so the next request starts clean.
             if hasattr(self, '_last_storage_key') and agent:
