@@ -442,6 +442,34 @@ function exRestartWizard() {
     exShowStep(1);
 }
 
+async function exSavePreview() {
+    var charId = document.getElementById('ex-char-id').value;
+    if (!charId) return;
+    var name = document.getElementById('ex-preview-name').value.trim();
+    if (!name) { alert('请填写角色名'); return; }
+    var persona = document.getElementById('ex-preview-persona').querySelector('pre').textContent || '';
+    var memory = document.getElementById('ex-preview-memory').querySelector('pre').textContent || '';
+
+    try {
+        var resp = await fetch('/api/ex/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, persona: persona, memory: memory, char_id: charId }),
+        });
+        var data = await resp.json();
+        if (data.status === 'success') {
+            // Sync name to wizard field and refresh list
+            document.getElementById('ex-name').value = name;
+            _exData._existingPersona = persona;
+            loadCharacters();
+        } else {
+            alert('保存失败: ' + (data.message || '未知错误'));
+        }
+    } catch (e) {
+        alert('保存失败: ' + e.message);
+    }
+}
+
 function hideExEditor() {
     var overlay = document.getElementById('ex-editor-overlay');
     if (overlay) overlay.classList.add('hidden');
