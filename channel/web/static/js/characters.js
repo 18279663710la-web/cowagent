@@ -43,11 +43,51 @@ function renderCharacterCard(c) {
     const activeBadge = c.is_active
         ? '<span class="px-2 py-0.5 text-xs rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-medium">已激活</span>'
         : '';
-    const interests = (c.interests && c.interests.length > 0)
-        ? c.interests.slice(0, 3).map(i => `<span class="px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400">${escHtml(i)}</span>`).join(' ')
-        : '';
     const bound = c.bound_user_id
         ? `<span class="text-xs text-slate-400 dark:text-slate-500"><i class="fas fa-link mr-1"></i>已绑定用户</span>`
+        : '';
+
+    if (c.ex_skill) {
+        return `
+        <div class="bg-white dark:bg-[#1A1A1A] rounded-2xl border border-slate-200 dark:border-white/10 p-5
+                    hover:border-rose-300 dark:hover:border-rose-700 transition-colors duration-150">
+            <div class="flex items-start justify-between mb-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-400 to-rose-600 flex items-center justify-center text-white text-lg font-bold flex-shrink-0">
+                        <i class="fas fa-heart-broken"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-slate-800 dark:text-slate-100 text-sm">${escHtml(c.name)} ${exBadge}${activeBadge}</h4>
+                    </div>
+                </div>
+                ${bound}
+            </div>
+            <div class="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-white/5">
+                ${c.is_active
+                    ? `<button onclick="deactivateCharacter('${c.id}')"
+                         class="px-3 py-1.5 text-xs rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400
+                                hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors cursor-pointer">
+                         <i class="fas fa-pause mr-1"></i>停用</button>`
+                    : `<button onclick="activateCharacter('${c.id}')"
+                         class="px-3 py-1.5 text-xs rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400
+                                hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors cursor-pointer">
+                         <i class="fas fa-play mr-1"></i>激活</button>`
+                }
+                <button onclick="editCharacter('${c.id}')"
+                        class="px-3 py-1.5 text-xs rounded-lg bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-400
+                               hover:bg-slate-100 dark:hover:bg-white/10 transition-colors cursor-pointer">
+                    <i class="fas fa-pen mr-1"></i>编辑</button>
+                <button onclick="deleteCharacter('${c.id}')"
+                        class="px-3 py-1.5 text-xs rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400
+                               hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer">
+                <i class="fas fa-trash mr-1"></i>删除</button>
+        </div>
+    </div>`;
+    }
+
+    // Regular character card
+    const interests = (c.interests && c.interests.length > 0)
+        ? c.interests.slice(0, 3).map(i => `<span class="px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400">${escHtml(i)}</span>`).join(' ')
         : '';
 
     return `
@@ -373,7 +413,7 @@ function _showExPreview(charData) {
     panels.forEach(function(p) { p.classList.add('hidden'); });
 
     // Populate preview fields
-    document.getElementById('ex-preview-name').textContent = charData.name || '(未设置)';
+    document.getElementById('ex-preview-name').value = charData.name || '';
     document.getElementById('ex-preview-persona').querySelector('pre').textContent = charData.personality || '';
     // Load memory from character workspace MEMORY.md
     var charId = charData.id || document.getElementById('ex-char-id').value;
