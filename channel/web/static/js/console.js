@@ -60,6 +60,7 @@ const I18N = {
         memory_loading: '加载记忆文件中...', memory_loading_desc: '记忆文件将显示在此处',
         memory_back: '返回列表',
         memory_col_name: '文件名', memory_col_type: '类型', memory_col_size: '大小', memory_col_updated: '更新时间',
+        memory_character: '角色',
         channels_title: '通道管理', channels_desc: '管理已接入的消息通道',
         channels_add: '接入通道', channels_disconnect: '断开',
         channels_save: '保存配置', channels_saved: '已保存', channels_save_error: '保存失败',
@@ -159,6 +160,7 @@ const I18N = {
         memory_loading: 'Loading memory files...', memory_loading_desc: 'Memory files will be displayed here',
         memory_back: 'Back to list',
         memory_col_name: 'Filename', memory_col_type: 'Type', memory_col_size: 'Size', memory_col_updated: 'Updated',
+        memory_character: 'Character',
         channels_title: 'Channels', channels_desc: 'Manage connected messaging channels',
         channels_add: 'Connect', channels_disconnect: 'Disconnect',
         channels_save: 'Save', channels_saved: 'Saved', channels_save_error: 'Save failed',
@@ -2871,18 +2873,53 @@ function toggleSkill(name, currentlyEnabled) {
 let memoryPage = 1;
 let memoryCategory = 'memory';   // 'memory' | 'dream'
 const memoryPageSize = 10;
+let selectedMemoryCharacterId = '';  // '' = global workspace
+
+async function loadMemoryCharacterSelector() {
+    const container = document.getElementById('memory-character-selector');
+    const dropdown = document.getElementById('memory-character-dropdown');
+    if (!container || !dropdown) return;
+    try {
+        const resp = await fetch('/api/characters');
+        const data = await resp.json();
+        if (data.status !== 'success' || !data.characters || data.characters.length === 0) {
+            container.classList.add('hidden');
+            return;
+        }
+        const currentVal = selectedMemoryCharacterId;
+        dropdown.innerHTML = '<option value="">Global</option>';
+        data.characters.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.display_name || c.name || c.id;
+            if (c.id === currentVal) opt.selected = true;
+            dropdown.appendChild(opt);
+        });
+        container.classList.remove('hidden');
+    } catch (e) {
+        container.classList.add('hidden');
+    }
+}
+
+function onMemoryCharacterChange() {
+    const dropdown = document.getElementById('memory-character-dropdown');
+    selectedMemoryCharacterId = dropdown ? dropdown.value : '';
+    loadMemoryView(1);
+}
 
 function switchMemoryTab(tab) {
     document.querySelectorAll('.memory-tab').forEach(el => el.classList.remove('active'));
     document.getElementById('memory-tab-' + tab).classList.add('active');
     memoryCategory = tab === 'dreams' ? 'dream' : 'memory';
     loadMemoryView(1);
+    loadMemoryCharacterSelector();
 }
 
 function loadMemoryView(page) {
     page = page || 1;
     memoryPage = page;
-    fetch(`/api/memory?page=${page}&page_size=${memoryPageSize}&category=${memoryCategory}`).then(r => r.json()).then(data => {
+    const charParam = selectedMemoryCharacterId ? `&character_id=${encodeURIComponent(selectedMemoryCharacterId)}` : '';
+    fetch(`/api/memory?page=${page}&page_size=${memoryPageSize}&category=${memoryCategory}${charParam}`).then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         const emptyEl = document.getElementById('memory-empty');
         const listEl = document.getElementById('memory-list');
@@ -2943,7 +2980,8 @@ function loadMemoryView(page) {
 
 function openMemoryFile(filename, category) {
     category = category || 'memory';
-    fetch(`/api/memory/content?filename=${encodeURIComponent(filename)}&category=${category}`).then(r => r.json()).then(data => {
+    const charParam = selectedMemoryCharacterId ? `&character_id=${encodeURIComponent(selectedMemoryCharacterId)}` : '';
+    fetch(`/api/memory/content?filename=${encodeURIComponent(filename)}&category=${category}${charParam}`).then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         document.getElementById('memory-panel-list').classList.add('hidden');
         const panel = document.getElementById('memory-panel-viewer');
@@ -4085,6 +4123,7 @@ navigateTo = function(viewId) {
         document.getElementById('memory-panel-viewer').classList.add('hidden');
         document.getElementById('memory-panel-list').classList.remove('hidden');
         switchMemoryTab('files');
+        loadMemoryCharacterSelector();
     }
     else if (viewId === 'knowledge') loadKnowledgeView();
     else if (viewId === 'channels') loadChannelsView();

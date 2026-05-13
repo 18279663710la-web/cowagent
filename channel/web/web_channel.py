@@ -1750,6 +1750,22 @@ def _get_workspace_root():
     return expand_path(conf().get("agent_workspace", "~/cow"))
 
 
+def _resolve_memory_workspace(character_id=None):
+    """Resolve the memory workspace directory.
+
+    When character_id is provided, returns the character's workspace.
+    Otherwise returns the global agent workspace.
+    """
+    if character_id:
+        from characters.registry import get_character_manager
+        cm = get_character_manager()
+        if cm:
+            char = cm.get_character(character_id)
+            if char:
+                return cm.store.get_character_workspace(character_id)
+    return _get_workspace_root()
+
+
 class ToolsHandler:
     def GET(self):
         _require_auth()
@@ -1823,8 +1839,10 @@ class MemoryHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from agent.memory.service import MemoryService
-            params = web.input(page='1', page_size='20', category='memory')
-            workspace_root = _get_workspace_root()
+            params = web.input(page='1', page_size='20', category='memory', character_id='')
+            workspace_root = _resolve_memory_workspace(
+                character_id=params.character_id.strip() or None
+            )
             service = MemoryService(workspace_root)
             result = service.list_files(
                 page=int(params.page), page_size=int(params.page_size),
@@ -1842,10 +1860,12 @@ class MemoryContentHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from agent.memory.service import MemoryService
-            params = web.input(filename='', category='memory')
+            params = web.input(filename='', category='memory', character_id='')
             if not params.filename:
                 return json.dumps({"status": "error", "message": "filename required"})
-            workspace_root = _get_workspace_root()
+            workspace_root = _resolve_memory_workspace(
+                character_id=params.character_id.strip() or None
+            )
             service = MemoryService(workspace_root)
             result = service.get_content(params.filename, category=params.category)
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
