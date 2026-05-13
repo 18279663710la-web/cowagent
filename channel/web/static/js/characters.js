@@ -366,8 +366,9 @@ function showExEditor(charId, charData) {
 }
 
 function _showExPreview(charData) {
-    // Hide step dots and all wizard steps
+    // Hide step dots, wizard steps, and any stale loading overlay
     document.getElementById('ex-steps').classList.add('hidden');
+    document.getElementById('ex-loading').classList.add('hidden');
     var panels = document.querySelectorAll('.ex-step');
     panels.forEach(function(p) { p.classList.add('hidden'); });
 
@@ -526,7 +527,7 @@ async function exAnalyze() {
             }),
         });
         var data = await resp.json();
-        if (data.status !== 'success') { alert('分析失败: ' + (data.message || '未知错误')); return; }
+        if (data.status !== 'success') { document.getElementById('ex-loading').classList.add('hidden'); alert('分析失败: ' + (data.message || '未知错误')); exShowStep(3); return; }
 
         _exData.persona = data.persona || data.raw || _exData.parseOutput;
         _exData.memory = data.memory || '';
@@ -572,9 +573,13 @@ async function exCreateCharacter() {
             hideExEditor();
             loadCharacters();
         } else {
+            document.getElementById('ex-loading').classList.add('hidden');
+            exShowStep(4);
             alert('创建失败: ' + (data.message || '未知错误'));
         }
     } catch (e) {
+        document.getElementById('ex-loading').classList.add('hidden');
+        exShowStep(4);
         alert('创建失败: ' + e.message);
     }
 }
