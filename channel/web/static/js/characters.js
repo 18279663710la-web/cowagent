@@ -351,7 +351,53 @@ function showExEditor(charId, charData) {
 
     if (charData) {
         document.getElementById('ex-name').value = charData.name || '';
+        document.getElementById('ex-target').value = charData.bound_user_id || '';
+        // Store existing persona / memory so exRestartWizard can pre-fill
+        _exData._existingPersona = charData.personality || '';
+        _exData._existingMemory = charData.personality || '';  // fallback — memory is in MEMORY.md
     }
+
+    // If character already has persona data, show preview; otherwise start wizard
+    if (charData && charData.personality && charData.personality.trim()) {
+        _showExPreview(charData);
+    } else {
+        exShowStep(1);
+    }
+}
+
+function _showExPreview(charData) {
+    // Hide step dots and all wizard steps
+    document.getElementById('ex-steps').classList.add('hidden');
+    var panels = document.querySelectorAll('.ex-step');
+    panels.forEach(function(p) { p.classList.add('hidden'); });
+
+    // Populate preview fields
+    document.getElementById('ex-preview-name').textContent = charData.name || '(未设置)';
+    document.getElementById('ex-preview-persona').querySelector('pre').textContent = charData.personality || '';
+    // Load memory from character workspace MEMORY.md
+    var charId = charData.id || document.getElementById('ex-char-id').value;
+    if (charId) {
+        fetch('/api/characters/' + charId + '/memory')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var mem = (data.status === 'success' && data.memory) ? data.memory : '';
+                document.getElementById('ex-preview-memory').querySelector('pre').textContent = mem;
+            })
+            .catch(function() {});
+    }
+    // Show preview
+    document.getElementById('ex-step0').classList.remove('hidden');
+}
+
+function exRestartWizard() {
+    // Show step dots again
+    document.getElementById('ex-steps').classList.remove('hidden');
+    // Hide preview
+    document.getElementById('ex-step0').classList.add('hidden');
+    // Pre-fill persona and memory from existing data so user can edit
+    _exData.persona = _exData._existingPersona || '';
+    _exData.memory = _exData._existingMemory || '';
+    // Start wizard from step 1
     exShowStep(1);
 }
 

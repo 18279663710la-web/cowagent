@@ -1093,6 +1093,39 @@
                     <span class="step-dot w-6 h-6 rounded-full bg-slate-200 dark:bg-white/10 text-slate-500 flex items-center justify-center">4</span>
                 </div>
 
+                <!-- Preview: existing bound character info -->
+                <div id="ex-step0" class="ex-step hidden">
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">已绑定的角色信息</p>
+                    <div class="mb-4">
+                        <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">角色名</label>
+                        <p id="ex-preview-name" class="text-sm text-slate-800 dark:text-slate-200 font-medium"></p>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">人设 (Persona)</label>
+                        <div id="ex-preview-persona" class="bg-slate-50 dark:bg-[#111] rounded-xl p-4 max-h-48 overflow-y-auto">
+                            <pre class="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-wrap font-mono"></pre>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">共同记忆 (Memory)</label>
+                        <div id="ex-preview-memory" class="bg-slate-50 dark:bg-[#111] rounded-xl p-4 max-h-48 overflow-y-auto">
+                            <pre class="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-wrap font-mono"></pre>
+                        </div>
+                    </div>
+                    <div class="flex justify-between">
+                        <button onclick="exRestartWizard()"
+                                class="px-4 py-2 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-sm
+                                       rounded-xl hover:bg-rose-50 dark:hover:bg-rose-900/20 cursor-pointer transition-colors">
+                            <i class="fas fa-redo mr-1"></i>重新绑定
+                        </button>
+                        <button onclick="hideExEditor()"
+                                class="px-4 py-2 bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 text-sm
+                                       rounded-xl hover:bg-slate-200 dark:hover:bg-white/10 cursor-pointer transition-colors">
+                            关闭
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Step 1: Basic Info -->
                 <div id="ex-step1" class="ex-step">
                     <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">填写基本信息</p>
