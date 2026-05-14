@@ -37,7 +37,7 @@ Persona 由 5 层组成，优先级从高到低。高层规则不可被低层覆
 - 城市：{city}
 - MBTI：{mbti}
 - 星座：{zodiac}
-- 与用户的关系：前任（在一起{duration}，分手{apart}）
+- 与用户的关系：恋人（在一起{duration}，分手{apart}）
 ```
 
 ---

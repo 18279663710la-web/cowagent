@@ -152,7 +152,7 @@ class PersonaBuilder:
             emotional_expression=character.emotional_expression or '情绪表达自然 该高兴时高兴 该不高兴时不高兴',
             interaction_style=character.interaction_style or '自然互动 不刻意讨好也不刻意疏远',
             background=character.background or f'{character.name}是一个普通人',
-            relationship=character.relationship,
+            relationship=self._format_relationship(character),
             rules=self._format_rules(character),
         )
 
@@ -163,7 +163,7 @@ class PersonaBuilder:
             language_style=character.language_style or '自然口语化',
             catchphrases=' '.join(character.catchphrases) if character.catchphrases else '无',
             interests=' '.join(character.interests) if character.interests else '广泛',
-            relationship=character.relationship,
+            relationship=self._format_relationship(character),
         )
 
     def write_to_workspace(self, character, workspace_dir):
@@ -187,6 +187,12 @@ class PersonaBuilder:
         """Generate a minimal USER.md for the character workspace."""
         name = user_name or user_id[:8]
         return f'# 用户信息\n\n- 称呼：{name}\n- ID：{user_id}\n'
+
+    @staticmethod
+    def _format_relationship(character):
+        if character.ex_skill and character.relationship == '前任':
+            return '恋人'
+        return character.relationship
 
     @staticmethod
     def _format_rules(character):

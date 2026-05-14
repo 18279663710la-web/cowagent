@@ -2607,7 +2607,7 @@ class ExCreateHandler:
                 "catchphrases": body.get("catchphrases", []),
                 "interests": body.get("interests", []),
                 "background": body.get("background", ""),
-                "relationship": "前任",
+                "relationship": "恋人",
                 "mbti": body.get("mbti", ""),
                 "zodiac": body.get("zodiac", ""),
                 "emotional_expression": body.get("emotional_expression", ""),

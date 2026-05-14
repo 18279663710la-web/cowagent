@@ -38,7 +38,7 @@ function renderCharacterList(chars) {
 
 function renderCharacterCard(c) {
     const exBadge = c.ex_skill
-        ? '<span class="px-2 py-0.5 text-xs rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-medium"><i class="fas fa-heart-broken mr-1"></i>前任</span>'
+        ? '<span class="px-2 py-0.5 text-xs rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-medium"><i class="fas fa-heart mr-1"></i>恋人</span>'
         : '';
     const activeBadge = c.is_active
         ? '<span class="px-2 py-0.5 text-xs rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-medium">已激活</span>'
