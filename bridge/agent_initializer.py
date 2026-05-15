@@ -477,16 +477,32 @@ class AgentInitializer:
         
         def get_current_time():
             """Get current time dynamically - called each time system prompt is accessed"""
-            now = datetime.datetime.now()
-            
-            # Get timezone info
-            try:
-                offset = -time.timezone if not time.daylight else -time.altzone
-                hours = offset // 3600
-                minutes = (offset % 3600) // 60
-                timezone_name = f"UTC{hours:+03d}:{minutes:02d}" if minutes else f"UTC{hours:+03d}"
-            except Exception:
-                timezone_name = "UTC"
+            from zoneinfo import ZoneInfo
+
+            tz_name = conf().get("timezone", "")
+            tz = None
+            if tz_name:
+                try:
+                    tz = ZoneInfo(tz_name)
+                except Exception:
+                    logger.warning(f"[AgentInitializer] Invalid timezone '{tz_name}', falling back to system timezone")
+
+            if tz is not None:
+                now = datetime.datetime.now(tz)
+                offset = now.utcoffset()
+                hours = offset.seconds // 3600 if offset else 0
+                minutes = (offset.seconds % 3600) // 60 if offset else 0
+                sign = "+" if offset and offset.days >= 0 else "-"
+                timezone_name = f"UTC{sign}{hours:02d}:{minutes:02d}" if minutes else f"UTC{sign}{hours:02d}"
+            else:
+                now = datetime.datetime.now()
+                try:
+                    offset = -time.timezone if not time.daylight else -time.altzone
+                    hours = offset // 3600
+                    minutes = (offset % 3600) // 60
+                    timezone_name = f"UTC{hours:+03d}:{minutes:02d}" if minutes else f"UTC{hours:+03d}"
+                except Exception:
+                    timezone_name = "UTC"
             
             # Chinese weekday mapping
             weekday_map = {
