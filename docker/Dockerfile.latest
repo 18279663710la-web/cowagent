@@ -11,6 +11,7 @@ ARG USE_CN_MIRROR=false
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/ms-playwright
 ENV BUILD_PREFIX=/app
+ENV TZ=$TZ
 
 # Optionally switch apt and pip to China mirrors
 RUN if [ "$USE_CN_MIRROR" = "true" ]; then \
@@ -22,7 +23,9 @@ ADD . ${BUILD_PREFIX}
 
 # All heavy installs + user creation in ONE layer to avoid chown duplication
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ffmpeg espeak libavcodec-extra \
+    && apt-get install -y --no-install-recommends bash ffmpeg espeak libavcodec-extra tzdata \
+    && ln -sf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo "$TZ" > /etc/timezone \
     && cd ${BUILD_PREFIX} \
     && cp config-template.json config.json \
     && /usr/local/bin/python -m pip install --no-cache --upgrade pip \

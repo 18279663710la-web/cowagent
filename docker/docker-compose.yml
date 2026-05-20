@@ -8,6 +8,8 @@ services:
         USE_CN_MIRROR: "true"
     container_name: cowagent
     restart: always
+    environment:
+      - TZ=Asia/Shanghai
     ports:
       - "9899:9899"
     volumes:

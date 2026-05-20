@@ -479,7 +479,9 @@ class AgentInitializer:
             """Get current time dynamically - called each time system prompt is accessed"""
             from zoneinfo import ZoneInfo
 
-            tz_name = conf().get("timezone", "")
+            import os
+
+            tz_name = conf().get("timezone", "") or os.environ.get("TZ", "")
             tz = None
             if tz_name:
                 try:
